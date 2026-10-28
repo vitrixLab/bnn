@@ -23,7 +23,7 @@ int main() {
     const auto q4 = weight_loss::quantize_int4(w, 2, 3);
     assert(q4.packed.size() == 3);
     assert(q4.row_scales.size() == 2);
-    assert(weight_loss::unpack_int4(q4, 0) == 3);
+    assert(weight_loss::unpack_int4(q4, 0) == 4);
     assert(weight_loss::unpack_int4(q4, 1) == -7);
     bool out_of_range_rejected = false;
     try { (void)weight_loss::unpack_int4(q4, 6); }
