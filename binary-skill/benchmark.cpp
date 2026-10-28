@@ -1,3 +1,6 @@
+#include "binary_skill.hpp"
+#include "build_provenance.hpp"
+
 #include <iostream>
 #include <string>
 #include <vector>
