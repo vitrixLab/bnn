@@ -169,13 +169,7 @@ int main(int argc, char* argv[]) {
                   << std::setw(14) << (r.median_ns / 1000.0)
                   << std::setw(14) << (r.p95_ns / 1000.0)
                   << std::setw(14) << (r.max_ns / 1000.0)
-                     << "      \"matches\": " << r.matches << ",\n"
-                     << "      \"raw_samples_ns\": [";
-            for (size_t j = 0; j < r.raw_samples_ns.size(); ++j) {
-                if (j != 0U) json_out << ", ";
-                json_out << r.raw_samples_ns[j];
-            }
-            json_out << "]\n"
+                  << r.matches << "\n";
     }
     std::cout << "========================================================================================\n";
 
@@ -231,12 +225,26 @@ int main(int argc, char* argv[]) {
                      << "      \"p95_ns\": " << r.p95_ns << ",\n"
                      << "      \"max_ns\": " << r.max_ns << ",\n"
                      << "      \"median_us\": " << (r.median_ns / 1000.0) << ",\n"
-                     << "      \"matches\": " << r.matches << "\n"
+                     << "      \"matches\": " << r.matches << ",\n"
+                     << "      \"raw_samples_ns\": [";
+            for (size_t j = 0; j < r.raw_samples_ns.size(); ++j) {
+                if (j != 0U) json_out << ", ";
+                json_out << r.raw_samples_ns[j];
+            }
+            json_out << "]\n"
                      << "    }" << (i + 1 < results.size() ? "," : "") << "\n";
         }
 
         json_out << "  ]\n}\n";
+        json_out.flush();
+        if (!json_out.good()) {
+            std::cerr << "Error: failed while writing benchmark_results.json\n";
+            return 1;
+        }
         std::cout << "Wrote machine-readable JSON metrics to benchmark_results.json\n";
+    } else {
+        std::cerr << "Error: could not open benchmark_results.json for writing\n";
+        return 1;
     }
 
     return 0;
