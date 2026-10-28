@@ -59,6 +59,15 @@ jobs:
             cmake --build build --parallel
           fi
 
+      - name: Run CTest CLI regression tests
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            ctest --test-dir build -C Debug --output-on-failure
+          else
+            ctest --test-dir build --output-on-failure
+          fi
+
       - name: Run compiler round-trip self-test
         shell: bash
         run: |
