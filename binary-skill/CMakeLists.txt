@@ -16,6 +16,7 @@ endif()
 # attributing a binary to a different revision based on its runtime working directory.
 find_package(Git QUIET)
 set(BNN_BUILD_GIT_COMMIT "unknown")
+set(BNN_BUILD_SOURCE_DIRTY "unknown")
 set(BNN_BENCH_CONTEXT "local" CACHE STRING "Benchmark context: local | ci-smoke | controlled-release")
 set_property(CACHE BNN_BENCH_CONTEXT PROPERTY STRINGS local ci-smoke controlled-release)
 if(NOT BNN_BENCH_CONTEXT MATCHES "^(local|ci-smoke|controlled-release)$")
@@ -37,6 +38,59 @@ if(GIT_FOUND)
        _bnn_git_sha MATCHES "^[0-9a-fA-F]+$")
         set(BNN_BUILD_GIT_COMMIT "${_bnn_git_sha}")
     endif()
+
+    # Snapshot dirty state at configure time; no shell quoting or runtime popen.
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" status --porcelain -- . ":(exclude)benchmark_results.json"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bnn_git_status
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _bnn_git_status_result
+        ERROR_QUIET)
+    if(_bnn_git_status_result EQUAL 0)
+        if(_bnn_git_status STREQUAL "")
+            set(BNN_BUILD_SOURCE_DIRTY "false")
+        else()
+            set(BNN_BUILD_SOURCE_DIRTY "true")
+        endif()
+    endif()
+
+    # Reconfigure if HEAD/ref/index or source inputs change. Resolve paths from
+    # the repository root because CMAKE_CURRENT_SOURCE_DIR is binary-skill/.
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --show-toplevel
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bnn_git_root OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    foreach(_bnn_git_item IN ITEMS HEAD index)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --git-path "${_bnn_git_item}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE _bnn_git_path OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_bnn_git_path)
+            get_filename_component(_bnn_git_path "${_bnn_git_path}" ABSOLUTE BASE_DIR "${_bnn_git_root}")
+            if(EXISTS "${_bnn_git_path}")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_bnn_git_path}")
+            endif()
+        endif()
+    endforeach()
+    execute_process(COMMAND "${GIT_EXECUTABLE}" symbolic-ref -q HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bnn_git_ref OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_bnn_git_ref)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --git-path "${_bnn_git_ref}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE _bnn_git_ref_path OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_bnn_git_ref_path)
+            get_filename_component(_bnn_git_ref_path "${_bnn_git_ref_path}" ABSOLUTE BASE_DIR "${_bnn_git_root}")
+            if(EXISTS "${_bnn_git_ref_path}")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_bnn_git_ref_path}")
+            endif()
+        endif()
+    endif()
+    file(GLOB_RECURSE _bnn_source_inputs CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.in")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_bnn_source_inputs})
 endif()
 file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" BNN_BUILD_SOURCE_DIR)
 configure_file(
