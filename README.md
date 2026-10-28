@@ -30,14 +30,18 @@ The nanoLM source was ported from [`vitrixLab/blank/ai/gpt.cpp`](https://github.
 
 ### INT4 weights with dynamic INT8 activations
 
-For each weight row (r), the reference implementation derives a symmetric row scale from the maximum absolute weight:
+For each weight row `r`, the reference implementation computes the maximum absolute weight and derives a symmetric scale:
 
-\[
-m_r = \max_c |W_{r,c}|, \qquad
-s_r = \begin{cases}m_r/7,&m_r>0\\0,&m_r=0\end{cases}
-\]
+```text
+m[r] = max_c |W[r,c]|
 
-Nonzero rows are quantized to signed integer values in ([-7,7]), with clipping after rounding. Two 4-bit values are packed into each byte. Activations are dynamically quantized to signed INT8, and the matrix-vector result is rescaled using the weight-row and activation scales.
+s[r] = m[r] / 7,  if m[r] > 0
+s[r] = 0,         if m[r] = 0
+```
+
+For a nonzero row, divide each weight by `s[r]`, round to the nearest integer, then clip to the signed INT4 range `[-7, 7]`. A zero row must be handled without dividing by zero. Two 4-bit values are packed into each byte.
+
+Activations are dynamically quantized to signed INT8. The matrix-vector result is then rescaled using the weight-row scale and activation scale.
 
 This is a simple reference implementation. Its numerical error, edge cases, and performance must be measured against an FP32 baseline on representative workloads.
 
@@ -101,13 +105,16 @@ Do not present a speedup figure as validated unless the baseline and candidate p
 
 ## Research and engineering principle
 
-A result is not fully substantiated by a formula, a passing smoke test, or a timing number alone. Correctness, data integrity, numerical accuracy, reproducibility, and provenance must be evaluated together:
+A result is not fully substantiated by a formula, a passing smoke test, or a timing number alone. Correctness, data integrity, numerical accuracy, reproducibility, and provenance must be evaluated together.
 
-\[
-A = C \land I \land N \land R \land P
-\]
+The proposed acceptance rule is:
 
-where `C` means correctness, `I` means integrity, `N` means numerical accuracy, `R` means reproducibility, and `P` means provenance. The symbol `AND` means every condition must hold. This is a proposed acceptance rule for research evidence, not a claim that every gate has already passed.
+```text
+Accept = Correctness AND Integrity AND Numerical accuracy
+         AND Reproducibility AND Provenance
+```
+
+Every condition must hold; success on one dimension does not compensate for failure on another. This is a proposed acceptance rule for research evidence, not a claim that every gate has already passed.
 
 ## Contributing
 
