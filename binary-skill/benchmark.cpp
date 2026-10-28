@@ -48,13 +48,27 @@ StatResult run_benchmark(const std::string& op_name, size_t iterations, Func&& f
     return res;
 }
 
+std::string environment_value(const char* name) {
+#ifdef _MSC_VER
+    char* buffer = nullptr;
+    size_t length = 0U;
+    if (_dupenv_s(&buffer, &length, name) != 0 || buffer == nullptr) return {};
+    const std::string value(buffer);
+    std::free(buffer);
+    return value;
+#else
+    const char* value = std::getenv(name);
+    return value ? std::string(value) : std::string();
+#endif
+}
+
 int main(int argc, char* argv[]) {
     std::string bin_path = "secondbrain.bin";
     if (argc >= 2) bin_path = argv[1];
 
-    const char* source_commit = std::getenv("BNN_SOURCE_COMMIT");
-    const char* source_dirty = std::getenv("BNN_SOURCE_DIRTY");
-    const char* bench_context = std::getenv("BNN_BENCH_CONTEXT");
+    const std::string source_commit = environment_value("BNN_SOURCE_COMMIT");
+    const std::string source_dirty = environment_value("BNN_SOURCE_DIRTY");
+    const std::string bench_context = environment_value("BNN_BENCH_CONTEXT");
 
     std::cout << "Starting BNN Binary-Skill Benchmark Suite (50 iterations per op)...\n";
 
