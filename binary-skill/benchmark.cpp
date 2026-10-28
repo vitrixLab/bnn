@@ -167,6 +167,10 @@ int main(int argc, char* argv[]) {
     // so a clean checkout is not falsely marked dirty by the report itself.
     const std::string git_commit = BNN_BUILD_GIT_COMMIT;
     const std::string source_dirty = BNN_BUILD_SOURCE_DIRTY;
+    if (source_dirty != "true" && source_dirty != "false") {
+        std::cerr << "Error: source dirty state is unknown; refusing to emit evidence.\n";
+        return 2;
+    }
     const std::string bench_context = BNN_BUILD_BENCH_CONTEXT;
 
     // Write machine-readable JSON results schema (Section 3.4 compliance + provenance)
