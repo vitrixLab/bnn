@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <cstdlib>
 #include "binary_skill.hpp"
 
 struct StatResult {
@@ -15,6 +16,7 @@ struct StatResult {
     uint64_t median_ns;
     uint64_t p95_ns;
     size_t matches;
+    std::vector<uint64_t> raw_samples_ns;
 };
 
 template <typename Func>
@@ -31,6 +33,7 @@ StatResult run_benchmark(const std::string& op_name, size_t iterations, Func&& f
         matches = m;
     }
 
+    const std::vector<uint64_t> raw_samples_ns = times;
     std::sort(times.begin(), times.end());
 
     StatResult res;
@@ -41,12 +44,42 @@ StatResult run_benchmark(const std::string& op_name, size_t iterations, Func&& f
     res.median_ns = times[iterations / 2];
     res.p95_ns = times[static_cast<size_t>(iterations * 0.95)];
     res.matches = matches;
+    res.raw_samples_ns = raw_samples_ns;
     return res;
+}
+
+std::string environment_value(const char* name) {
+#ifdef _MSC_VER
+    char* buffer = nullptr;
+    size_t length = 0U;
+    if (_dupenv_s(&buffer, &length, name) != 0 || buffer == nullptr) return {};
+    const std::string value(buffer);
+    std::free(buffer);
+    return value;
+#else
+    const char* value = std::getenv(name);
+    return value ? std::string(value) : std::string();
+#endif
 }
 
 int main(int argc, char* argv[]) {
     std::string bin_path = "secondbrain.bin";
     if (argc >= 2) bin_path = argv[1];
+
+    const std::string source_commit = environment_value("BNN_SOURCE_COMMIT");
+    const std::string source_dirty = environment_value("BNN_SOURCE_DIRTY");
+    const std::string bench_context = environment_value("BNN_BENCH_CONTEXT");
+    const std::string cpu_model = environment_value("BNN_CPU_MODEL");
+    const std::string build_flags = environment_value("BNN_BUILD_FLAGS");
+
+#ifndef BNN_CONFIGURED_SOURCE_COMMIT
+#define BNN_CONFIGURED_SOURCE_COMMIT "unknown"
+#endif
+#ifndef BNN_CONFIGURED_SOURCE_DIRTY
+#define BNN_CONFIGURED_SOURCE_DIRTY "unknown"
+#endif
+    if (source_commit.empty()) source_commit = BNN_CONFIGURED_SOURCE_COMMIT;
+    if (source_dirty.empty()) source_dirty = BNN_CONFIGURED_SOURCE_DIRTY;
 
     std::cout << "Starting BNN Binary-Skill Benchmark Suite (50 iterations per op)...\n";
 
@@ -174,7 +207,11 @@ int main(int argc, char* argv[]) {
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
-                 << "    \"commit\": \"b251258\",\n"
+                 << "    \"commit\": " << (source_commit.empty() ? "null" : std::string("\"") + source_commit + "\"") << ",\n"
+                 << "    \"source_dirty\": " << (source_dirty.empty() ? "\"unknown\"" : std::string("\"") + source_dirty + "\"") << ",\n"
+                 << "    \"bench_context\": " << (bench_context.empty() ? "\"unknown\"" : std::string("\"") + bench_context + "\"") << ",\n"
+                 << "    \"cpu_model\": " << (cpu_model.empty() ? "\"unknown\"" : std::string("\"") + cpu_model + "\"") << ",\n"
+                 << "    \"build_flags\": " << (build_flags.empty() ? "\"unknown\"" : std::string("\"") + build_flags + "\"") << ",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
@@ -215,12 +252,26 @@ int main(int argc, char* argv[]) {
                      << "      \"p95_ns\": " << r.p95_ns << ",\n"
                      << "      \"max_ns\": " << r.max_ns << ",\n"
                      << "      \"median_us\": " << (r.median_ns / 1000.0) << ",\n"
-                     << "      \"matches\": " << r.matches << "\n"
+                     << "      \"matches\": " << r.matches << ",\n"
+                     << "      \"raw_samples_ns\": [";
+            for (size_t j = 0; j < r.raw_samples_ns.size(); ++j) {
+                if (j != 0U) json_out << ", ";
+                json_out << r.raw_samples_ns[j];
+            }
+            json_out << "]\n"
                      << "    }" << (i + 1 < results.size() ? "," : "") << "\n";
         }
 
         json_out << "  ]\n}\n";
+        json_out.flush();
+        if (!json_out.good()) {
+            std::cerr << "Error: failed while writing benchmark_results.json\n";
+            return 1;
+        }
         std::cout << "Wrote machine-readable JSON metrics to benchmark_results.json\n";
+    } else {
+        std::cerr << "Error: could not open benchmark_results.json for writing\n";
+        return 1;
     }
 
     return 0;
