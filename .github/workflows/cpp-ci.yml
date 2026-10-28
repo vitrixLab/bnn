@@ -1,8 +1,6 @@
 name: Binary and C++ Engineering CI
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
     branches: ["**"]
   workflow_dispatch:
@@ -21,13 +19,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             compiler: gcc
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             compiler: clang
-          - os: macos-latest
+          - os: macos-15
             compiler: clang
-          - os: windows-latest
+          - os: windows-2022
             compiler: msvc
     runs-on: ${{ matrix.os }}
     steps:
@@ -130,6 +128,41 @@ jobs:
           print(f"Benchmark smoke test PASS: {len(results)} operations; timings are informational only.")
           PY
 
+      - name: Provenance regression — worktree change after configure (and Windows percent path)
+        shell: bash
+        run: |
+          probe="$RUNNER_TEMP/bnn-provenance-probe"
+          percent_input="$RUNNER_TEMP/bnn%provenance-input.bin"
+          git clone --no-hardlinks "$GITHUB_WORKSPACE" "$probe"
+          cp "$probe/binary-skill/secondbrain.bin" "$percent_input"
+          cmake -S "$probe/binary-skill" -B "$probe/build-probe" -DCMAKE_BUILD_TYPE=Debug -DBNN_BENCH_CONTEXT=ci-smoke
+          # Mutate a source file after configure; the next build must reconfigure
+          # and embed dirty=true. Keep generated build paths free of '%' because
+          # MSBuild emits cmd.exe commands; pass the percent path as the binary argument.
+          printf '\n// configure-to-build dirty-state regression probe\n' >> "$probe/binary-skill/benchmark.cpp"
+          # Force CMake's native regeneration check on every generator, including MSBuild.
+          printf '\n# force provenance regression reconfigure\n' >> "$probe/binary-skill/CMakeLists.txt"
+          cmake --build "$probe/build-probe" --config Debug --target benchmark_runner --parallel
+          mkdir -p "$probe/run-probe"
+          cd "$probe/run-probe"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            ../build-probe/Debug/benchmark_runner.exe "$percent_input"
+          else
+            ../build-probe/benchmark_runner "$percent_input"
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("benchmark_results.json").read_text())
+          provenance = report["provenance"]
+          assert len(provenance["commit"]) == 40 and all(c in "0123456789abcdef" for c in provenance["commit"]), provenance
+          assert provenance["source_dirty"] is True, (
+              "source modified after configure must be detected after CMake reconfigure; "
+              f"got {provenance['source_dirty']!r}"
+          )
+          print("PASS: changed worktree detected after configure; Windows path includes percent sign.")
+          PY
+
       - name: Upload benchmark and build evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -143,7 +176,7 @@ jobs:
 
   static-analysis:
     name: C++ static analysis (Cppcheck)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -165,7 +198,7 @@ jobs:
 
   linux-sanitizers:
     name: Linux ASan + UBSan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4

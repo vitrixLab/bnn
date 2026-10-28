@@ -1,3 +1,6 @@
+#include "binary_skill.hpp"
+#include "build_provenance.hpp"
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -5,70 +8,6 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
-#include <cstdio>
-#include <cstdlib>
-#include "binary_skill.hpp"
-#include "build_provenance.hpp"
-
-#ifdef _WIN32
-#define BNN_POPEN _popen
-#define BNN_PCLOSE _pclose
-#else
-#include <sys/wait.h>
-#define BNN_POPEN popen
-#define BNN_PCLOSE pclose
-#endif
-
-static int pipe_close(std::FILE* pipe) {
-#ifdef _WIN32
-    return _pclose(pipe);
-#else
-    int status = BNN_PCLOSE(pipe);
-    if (status == -1) return -1;
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    return -1;
-#endif
-}
-
-static std::string shell_quote(const std::string& value) {
-#ifdef _WIN32
-    // Windows file names cannot contain double quotes.
-    return "\"" + value + "\"";
-#else
-    // POSIX single-quote escaping also handles spaces and embedded apostrophes.
-    std::string quoted = "'";
-    for (char ch : value) {
-        if (ch == '\'') {
-            quoted += "'\\''";
-        } else {
-            quoted += ch;
-        }
-    }
-    quoted += "'";
-    return quoted;
-#endif
-}
-
-static std::string get_git_dirty_state() {
-    // Inspect the source directory used to configure this binary, not whichever
-    // repository happens to be the caller's current working directory.
-    const std::string command =
-        "git -C " + shell_quote(BNN_BUILD_SOURCE_DIR) + " status --porcelain";
-    char buffer[128] = {0};
-    std::FILE* pipe = BNN_POPEN(command.c_str(), "r");
-    if (!pipe) {
-        return "unknown";
-    }
-    std::string out;
-    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        out += buffer;
-    }
-    if (pipe_close(pipe) != 0) {
-        return "unknown";
-    }
-    return out.empty() ? "false" : "true";
-}
-
 struct StatResult {
     std::string operation;
     size_t samples;
@@ -230,7 +169,11 @@ int main(int argc, char* argv[]) {
     // Capture source provenance BEFORE opening/truncating benchmark_results.json
     // so a clean checkout is not falsely marked dirty by the report itself.
     const std::string git_commit = BNN_BUILD_GIT_COMMIT;
-    const std::string source_dirty = get_git_dirty_state();
+    const std::string source_dirty = BNN_BUILD_SOURCE_DIRTY;
+    if (source_dirty != "true" && source_dirty != "false") {
+        std::cerr << "Error: source dirty state is unknown; refusing to emit evidence.\n";
+        return 2;
+    }
     const std::string bench_context = BNN_BUILD_BENCH_CONTEXT;
 
     // Write machine-readable JSON results schema (Section 3.4 compliance + provenance)
@@ -243,7 +186,7 @@ int main(int argc, char* argv[]) {
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
                  << "    \"commit\": \"" << git_commit << "\",\n"
-                 << "    \"source_dirty\": \"" << source_dirty << "\",\n"
+                 << "    \"source_dirty\": " << (source_dirty == "true" ? "true" : "false") << ",\n"
                  << "    \"bench_context\": \"" << bench_context << "\",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
