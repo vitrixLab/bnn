@@ -16,6 +16,12 @@ endif()
 # attributing a binary to a different revision based on its runtime working directory.
 find_package(Git QUIET)
 set(BNN_BUILD_GIT_COMMIT "unknown")
+set(BNN_BENCH_CONTEXT "local" CACHE STRING "Benchmark context: local | ci-smoke | controlled-release")
+set_property(CACHE BNN_BENCH_CONTEXT PROPERTY STRINGS local ci-smoke controlled-release)
+if(NOT BNN_BENCH_CONTEXT MATCHES "^(local|ci-smoke|controlled-release)$")
+    message(FATAL_ERROR "BNN_BENCH_CONTEXT must be local, ci-smoke, or controlled-release")
+endif()
+set(BNN_BUILD_BENCH_CONTEXT "${BNN_BENCH_CONTEXT}")
 if(GIT_FOUND)
     execute_process(
         COMMAND "${GIT_EXECUTABLE}" rev-parse --verify HEAD

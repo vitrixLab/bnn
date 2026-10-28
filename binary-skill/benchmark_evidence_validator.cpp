@@ -449,7 +449,7 @@ int run_json_parser_self_tests() {
             throw std::runtime_error("key-like text inside a string became an object property");
         }
 
-        if (!parser_rejects(R"({"provenance":{},"provenance":{}})")) {
+        if (!parser_rejects(R"({"provenance":{},"\u0070rovenance":{}})")) {
             throw std::runtime_error("duplicate keys after unicode decoding were accepted");
         }
         if (!parser_rejects(R"({"provenance": })")) {

@@ -48,7 +48,7 @@ jobs:
             export CC=gcc
             export CXX=g++
           fi
-          cmake -S binary-skill -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake -S binary-skill -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBNN_BENCH_CONTEXT=ci-smoke
 
       - name: Build every C++ target with warnings enabled
         shell: bash
