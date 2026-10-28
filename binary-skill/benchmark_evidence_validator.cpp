@@ -407,15 +407,37 @@ void validate_report(const JsonValue& report, const std::string& binary_path) {
 
     validate_results(report);
 
-    const std::string commit = optional_string(provenance, "commit", "");
-    const std::string dirty = optional_string(provenance, "source_dirty", "unknown");
-    const std::string context = optional_string(provenance, "bench_context", "unknown");
+    const std::string commit = required_string(provenance, "commit");
+    const JsonValue& dirty_value = required_field(provenance, "source_dirty");
+    if (dirty_value.type != JsonValue::Type::Boolean) {
+        throw std::runtime_error("field must be a JSON boolean: source_dirty");
+    }
+    const bool dirty = dirty_value.boolean_value;
+    const std::string context = required_string(provenance, "bench_context");
+    if (!std::regex_match(commit, std::regex("[0-9a-f]{40}"))) {
+        throw std::runtime_error("commit must be 40 lowercase hexadecimal characters");
+    }
+    if (context.empty()) {
+        throw std::runtime_error("bench_context must not be empty");
+    }
     if (build_type == "Release" &&
-        std::regex_match(commit, std::regex("[0-9a-f]{40}")) &&
-        dirty == "false" && context == "controlled-release") {
+        !dirty && context == "controlled-release") {
         std::cout << "Controlled-release provenance contract PASS\n";
     } else {
         std::cout << "NOTICE: validated as historical evidence; not certified as controlled-release provenance.\n";
+    }
+}
+
+bool provenance_rejects(const std::string& input) {
+    try {
+        const JsonValue root = JsonParser(input).parse();
+        const JsonValue& provenance = required_field(root, "provenance");
+        const std::string commit = required_string(provenance, "commit");
+        const JsonValue& dirty = required_field(provenance, "source_dirty");
+        return !std::regex_match(commit, std::regex("[0-9a-f]{40}")) ||
+               dirty.type != JsonValue::Type::Boolean;
+    } catch (const std::exception&) {
+        return true;
     }
 }
 
@@ -468,7 +490,18 @@ int run_json_parser_self_tests() {
             throw std::runtime_error("trailing non-JSON text was accepted");
         }
 
-        std::cout << "PASS: strict JSON parser self-tests (escaping, property scope, unicode keys, duplicates, malformed input)\n";
+        const std::string valid_commit(40, 'a');
+        if (provenance_rejects("{\"provenance\":{\"commit\":\""+valid_commit+"\",\"source_dirty\":false}}"))
+            throw std::runtime_error("valid provenance was rejected");
+        if (!provenance_rejects(R"({"provenance":{"source_dirty":false}})"))
+            throw std::runtime_error("missing commit was accepted");
+        if (!provenance_rejects(R"({"provenance":{"commit":"unknown","source_dirty":false}})"))
+            throw std::runtime_error("unknown commit was accepted");
+        if (!provenance_rejects("{\"provenance\":{\"commit\":\""+valid_commit+"\",\"source_dirty\":\"false\"}}"))
+            throw std::runtime_error("string source_dirty was accepted");
+        if (!provenance_rejects("{\"provenance\":{\"commit\":\""+valid_commit+"\",\"source_dirty\":null}}"))
+            throw std::runtime_error("null source_dirty was accepted");
+        std::cout << "PASS: JSON parser and strict provenance self-tests (escaping, duplicates, malformed input, commit and boolean contract)\\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: JSON parser self-test: " << error.what() << '\n';
