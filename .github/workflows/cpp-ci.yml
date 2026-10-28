@@ -59,6 +59,15 @@ jobs:
             cmake --build build --parallel
           fi
 
+      - name: Run strict JSON parser self-tests
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            ./build/Debug/benchmark_evidence_validator.exe --self-test-json-parser
+          else
+            ./build/benchmark_evidence_validator --self-test-json-parser
+          fi
+
       - name: Run compiler round-trip self-test
         shell: bash
         run: |

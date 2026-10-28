@@ -1,82 +1,344 @@
 #include "binary_skill.hpp"
 
-#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <regex>
+#include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
-std::string extract_object(const std::string& json, const std::string& key) {
-    const std::string needle = "\"" + key + "\"";
-    std::size_t search_from = 0;
+struct JsonValue {
+    enum class Type { Null, Boolean, Number, String, Array, Object };
+    Type type = Type::Null;
+    bool boolean_value = false;
+    std::string text;
+    std::vector<JsonValue> array_value;
+    std::map<std::string, JsonValue> object_value;
+};
 
-    while ((search_from = json.find(needle, search_from)) != std::string::npos) {
-        // Verify this is a JSON key: preceded by '{', ',', or whitespace (start of object/array).
-        // This prevents matching the key text inside a string value (e.g. "some_provenance_data").
-        if (search_from > 0) {
-            const char prev = json[search_from - 1];
-            if (prev != '{' && prev != ',' && prev != ' ' && prev != '\t' &&
-                prev != '\n' && prev != '\r') {
-                ++search_from;
-                continue;
-            }
+class JsonParser {
+public:
+    explicit JsonParser(const std::string& input) : input_(input) {}
+
+    JsonValue parse() {
+        skip_whitespace();
+        JsonValue root = parse_value(0);
+        skip_whitespace();
+        if (position_ != input_.size()) {
+            fail("trailing characters after the JSON value");
         }
-
-        const auto key_end = search_from + needle.size();
-        const auto colon = json.find(':', key_end);
-        if (colon == std::string::npos) {
-            throw std::runtime_error("invalid object: " + key);
-        }
-
-        // Skip whitespace between colon and the opening brace.
-        std::size_t brace_pos = colon + 1;
-        while (brace_pos < json.size() &&
-               (json[brace_pos] == ' ' || json[brace_pos] == '\t' ||
-                json[brace_pos] == '\n' || json[brace_pos] == '\r')) {
-            ++brace_pos;
-        }
-
-        if (brace_pos >= json.size() || json[brace_pos] != '{') {
-            throw std::runtime_error("missing object body: " + key);
-        }
-
-        unsigned depth = 0;
-        bool in_string = false;
-        bool escaped = false;
-        for (std::size_t i = brace_pos; i < json.size(); ++i) {
-            const char ch = json[i];
-            if (in_string) {
-                if (escaped) {
-                    escaped = false;
-                } else if (ch == '\\') {
-                    escaped = true;
-                } else if (ch == '"') {
-                    in_string = false;
-                }
-                continue;
-            }
-
-            if (ch == '"') {
-                in_string = true;
-            } else if (ch == '{') {
-                ++depth;
-            } else if (ch == '}') {
-                --depth;
-                if (depth == 0) {
-                    return json.substr(brace_pos, i - brace_pos + 1);
-                }
-            }
-        }
-
-        throw std::runtime_error("unterminated object: " + key);
+        return root;
     }
 
-    throw std::runtime_error("missing object: " + key);
+private:
+    static constexpr std::size_t kMaxDepth = 128;
+    const std::string& input_;
+    std::size_t position_ = 0;
+
+    [[noreturn]] void fail(const std::string& message) const {
+        throw std::runtime_error("invalid JSON at byte " +
+                                 std::to_string(position_) + ": " + message);
+    }
+
+    void skip_whitespace() {
+        while (position_ < input_.size()) {
+            const char ch = input_[position_];
+            if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') break;
+            ++position_;
+        }
+    }
+
+    bool consume(char expected) {
+        if (position_ < input_.size() && input_[position_] == expected) {
+            ++position_;
+            return true;
+        }
+        return false;
+    }
+
+    void expect(char expected) {
+        if (!consume(expected)) {
+            fail(std::string("expected '") + expected + "'");
+        }
+    }
+
+    static void append_utf8(std::string& output, unsigned int cp) {
+        if (cp <= 0x7FU) {
+            output.push_back(static_cast<char>(cp));
+        } else if (cp <= 0x7FFU) {
+            output.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
+            output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        } else if (cp <= 0xFFFFU) {
+            output.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
+            output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
+            output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        } else {
+            output.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
+            output.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
+            output.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
+            output.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        }
+    }
+
+    unsigned int parse_hex_quad() {
+        if (input_.size() - position_ < 4U) fail("incomplete unicode escape");
+        unsigned int value = 0;
+        for (unsigned int i = 0; i < 4U; ++i) {
+            const char ch = input_[position_++];
+            value <<= 4U;
+            if (ch >= '0' && ch <= '9') value |= static_cast<unsigned int>(ch - '0');
+            else if (ch >= 'a' && ch <= 'f') value |= static_cast<unsigned int>(ch - 'a' + 10);
+            else if (ch >= 'A' && ch <= 'F') value |= static_cast<unsigned int>(ch - 'A' + 10);
+            else fail("non-hexadecimal digit in unicode escape");
+        }
+        return value;
+    }
+
+    std::string parse_string() {
+        expect('"');
+        std::string output;
+        while (position_ < input_.size()) {
+            const unsigned char ch = static_cast<unsigned char>(input_[position_++]);
+            if (ch == '"') return output;
+            if (ch < 0x20U) fail("unescaped control character in string");
+            if (ch != '\\') {
+                output.push_back(static_cast<char>(ch));
+                continue;
+            }
+            if (position_ >= input_.size()) fail("incomplete escape sequence");
+            const char escape = input_[position_++];
+            switch (escape) {
+                case '"': output.push_back('"'); break;
+                case '\\': output.push_back('\\'); break;
+                case '/': output.push_back('/'); break;
+                case 'b': output.push_back('\b'); break;
+                case 'f': output.push_back('\f'); break;
+                case 'n': output.push_back('\n'); break;
+                case 'r': output.push_back('\r'); break;
+                case 't': output.push_back('\t'); break;
+                case 'u': {
+                    unsigned int cp = parse_hex_quad();
+                    if (cp >= 0xD800U && cp <= 0xDBFFU) {
+                        if (input_.size() - position_ < 6U ||
+                            input_[position_] != '\\' || input_[position_ + 1U] != 'u') {
+                            fail("high surrogate without low surrogate");
+                        }
+                        position_ += 2U;
+                        const unsigned int low = parse_hex_quad();
+                        if (low < 0xDC00U || low > 0xDFFFU) {
+                            fail("invalid low surrogate");
+                        }
+                        cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
+                    } else if (cp >= 0xDC00U && cp <= 0xDFFFU) {
+                        fail("low surrogate without high surrogate");
+                    }
+                    append_utf8(output, cp);
+                    break;
+                }
+                default: fail("unknown string escape");
+            }
+        }
+        fail("unterminated string");
+    }
+
+    JsonValue parse_number() {
+        const std::size_t start = position_;
+        consume('-');
+        if (position_ >= input_.size()) fail("incomplete number");
+        if (consume('0')) {
+            if (position_ < input_.size() && input_[position_] >= '0' &&
+                input_[position_] <= '9') {
+                fail("leading zero in number");
+            }
+        } else {
+            if (input_[position_] < '1' || input_[position_] > '9') {
+                fail("invalid number");
+            }
+            while (position_ < input_.size() &&
+                   input_[position_] >= '0' && input_[position_] <= '9') ++position_;
+        }
+        if (consume('.')) {
+            const std::size_t fraction_start = position_;
+            while (position_ < input_.size() &&
+                   input_[position_] >= '0' && input_[position_] <= '9') ++position_;
+            if (position_ == fraction_start) fail("fraction requires a digit");
+        }
+        if (position_ < input_.size() &&
+            (input_[position_] == 'e' || input_[position_] == 'E')) {
+            ++position_;
+            if (position_ < input_.size() &&
+                (input_[position_] == '+' || input_[position_] == '-')) ++position_;
+            const std::size_t exponent_start = position_;
+            while (position_ < input_.size() &&
+                   input_[position_] >= '0' && input_[position_] <= '9') ++position_;
+            if (position_ == exponent_start) fail("exponent requires a digit");
+        }
+        JsonValue value;
+        value.type = JsonValue::Type::Number;
+        value.text = input_.substr(start, position_ - start);
+        return value;
+    }
+
+    bool consume_literal(const char* literal) {
+        std::size_t i = 0;
+        while (literal[i] != '\0') {
+            if (position_ + i >= input_.size() || input_[position_ + i] != literal[i]) {
+                return false;
+            }
+            ++i;
+        }
+        position_ += i;
+        return true;
+    }
+
+    JsonValue parse_value(std::size_t depth) {
+        if (depth > kMaxDepth) fail("maximum nesting depth exceeded");
+        skip_whitespace();
+        if (position_ >= input_.size()) fail("expected a JSON value");
+        const char ch = input_[position_];
+        if (ch == '"') {
+            JsonValue value;
+            value.type = JsonValue::Type::String;
+            value.text = parse_string();
+            return value;
+        }
+        if (ch == '{') return parse_object(depth);
+        if (ch == '[') return parse_array(depth);
+        if (ch == 't') {
+            if (!consume_literal("true")) fail("invalid literal");
+            JsonValue value;
+            value.type = JsonValue::Type::Boolean;
+            value.boolean_value = true;
+            return value;
+        }
+        if (ch == 'f') {
+            if (!consume_literal("false")) fail("invalid literal");
+            JsonValue value;
+            value.type = JsonValue::Type::Boolean;
+            value.boolean_value = false;
+            return value;
+        }
+        if (ch == 'n') {
+            if (!consume_literal("null")) fail("invalid literal");
+            return JsonValue{};
+        }
+        if (ch == '-' || (ch >= '0' && ch <= '9')) return parse_number();
+        fail("unexpected token");
+    }
+
+    JsonValue parse_object(std::size_t depth) {
+        expect('{');
+        JsonValue object;
+        object.type = JsonValue::Type::Object;
+        skip_whitespace();
+        if (consume('}')) return object;
+        while (true) {
+            skip_whitespace();
+            if (position_ >= input_.size() || input_[position_] != '"') {
+                fail("object member name must be a string");
+            }
+            std::string key = parse_string();
+            skip_whitespace();
+            expect(':');
+            JsonValue value = parse_value(depth + 1U);
+            if (!object.object_value.emplace(key, std::move(value)).second) {
+                fail("duplicate object key: " + key);
+            }
+            skip_whitespace();
+            if (consume('}')) return object;
+            expect(',');
+            skip_whitespace();
+            if (position_ < input_.size() && input_[position_] == '}') {
+                fail("trailing comma in object");
+            }
+        }
+    }
+
+    JsonValue parse_array(std::size_t depth) {
+        expect('[');
+        JsonValue array;
+        array.type = JsonValue::Type::Array;
+        skip_whitespace();
+        if (consume(']')) return array;
+        while (true) {
+            array.array_value.push_back(parse_value(depth + 1U));
+            skip_whitespace();
+            if (consume(']')) return array;
+            expect(',');
+            skip_whitespace();
+            if (position_ < input_.size() && input_[position_] == ']') {
+                fail("trailing comma in array");
+            }
+        }
+    }
+};
+
+const JsonValue& required_field(const JsonValue& object, const std::string& key) {
+    if (object.type != JsonValue::Type::Object) {
+        throw std::runtime_error("expected JSON object while looking for field: " + key);
+    }
+    const auto found = object.object_value.find(key);
+    if (found == object.object_value.end()) {
+        throw std::runtime_error("missing required field: " + key);
+    }
+    return found->second;
+}
+
+const JsonValue* optional_field(const JsonValue& object, const std::string& key) {
+    if (object.type != JsonValue::Type::Object) {
+        throw std::runtime_error("expected JSON object while looking for field: " + key);
+    }
+    const auto found = object.object_value.find(key);
+    return found == object.object_value.end() ? nullptr : &found->second;
+}
+
+std::string required_string(const JsonValue& object, const std::string& key) {
+    const JsonValue& value = required_field(object, key);
+    if (value.type != JsonValue::Type::String) {
+        throw std::runtime_error("field must be a string: " + key);
+    }
+    return value.text;
+}
+
+uint64_t required_uint(const JsonValue& object, const std::string& key,
+                       bool allow_zero = false) {
+    const JsonValue& value = required_field(object, key);
+    if (value.type != JsonValue::Type::Number || value.text.empty() ||
+        value.text[0] == '-' ||
+        value.text.find_first_of(".eE") != std::string::npos) {
+        throw std::runtime_error("field must be an unsigned integer: " + key);
+    }
+    try {
+        std::size_t consumed = 0;
+        const unsigned long long parsed = std::stoull(value.text, &consumed, 10);
+        if (consumed != value.text.size() ||
+            parsed > static_cast<unsigned long long>(std::numeric_limits<uint64_t>::max()) ||
+            (!allow_zero && parsed == 0ULL)) {
+            throw std::runtime_error("integer field outside allowed range: " + key);
+        }
+        return static_cast<uint64_t>(parsed);
+    } catch (const std::invalid_argument&) {
+        throw std::runtime_error("invalid unsigned integer field: " + key);
+    } catch (const std::out_of_range&) {
+        throw std::runtime_error("integer field outside allowed range: " + key);
+    }
+}
+
+std::string optional_string(const JsonValue& object, const std::string& key,
+                            const std::string& fallback) {
+    const JsonValue* value = optional_field(object, key);
+    if (!value) return fallback;
+    if (value->type != JsonValue::Type::String) {
+        throw std::runtime_error("field must be a string: " + key);
+    }
+    return value->text;
 }
 
 std::string read_file(const std::string& path) {
@@ -88,108 +350,40 @@ std::string read_file(const std::string& path) {
                        std::istreambuf_iterator<char>());
 }
 
-std::string required_string(const std::string& json, const std::string& key) {
-    const std::regex field(std::string("\"") + key + "\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"");
-    std::smatch match;
-    if (!std::regex_search(json, match, field)) {
-        throw std::runtime_error("missing or invalid string field: " + key);
+void validate_results(const JsonValue& report) {
+    const JsonValue& results = required_field(report, "results");
+    if (results.type != JsonValue::Type::Array || results.array_value.empty()) {
+        throw std::runtime_error("results must be a non-empty array");
     }
-    return match[1].str();
-}
-
-uint64_t required_uint(const std::string& json, const std::string& key,
-                       bool allow_zero = false) {
-    const std::regex field(std::string("\"") + key + "\"[[:space:]]*:[[:space:]]*([0-9]+)");
-    std::smatch match;
-    if (!std::regex_search(json, match, field)) {
-        throw std::runtime_error("missing or invalid integer field: " + key);
-    }
-    const std::string value = match[1].str();
-    size_t consumed = 0;
-    const unsigned long long parsed = std::stoull(value, &consumed);
-    if (consumed != value.size() || (!allow_zero && parsed == 0U)) {
-        throw std::runtime_error("integer field outside allowed range: " + key);
-    }
-    return static_cast<uint64_t>(parsed);
-}
-
-bool has_key(const std::string& object, const std::string& key) {
-    const std::regex field(std::string("\"") + key + "\"[[:space:]]*:");
-    return std::regex_search(object, field);
-}
-
-void validate_results(const std::string& json) {
-    const auto results_key = json.find("\"results\"");
-    if (results_key == std::string::npos) {
-        throw std::runtime_error("missing results array");
-    }
-    const auto array_start = json.find('[', results_key);
-    if (array_start == std::string::npos) {
-        throw std::runtime_error("results is not an array");
-    }
-
-    size_t position = array_start + 1U;
-    size_t result_count = 0U;
-    while (position < json.size()) {
-        while (position < json.size() &&
-               (std::isspace(static_cast<unsigned char>(json[position])) ||
-                json[position] == ',')) {
-            ++position;
+    for (const JsonValue& item : results.array_value) {
+        if (item.type != JsonValue::Type::Object) {
+            throw std::runtime_error("each results entry must be an object");
         }
-        if (position >= json.size()) break;
-        if (json[position] == ']') break;
-        if (json[position] != '{') {
-            throw std::runtime_error("invalid results array entry");
-        }
-
-        const size_t object_start = position;
-        bool in_string = false;
-        bool escaped = false;
-        unsigned depth = 0U;
-        for (; position < json.size(); ++position) {
-            const char ch = json[position];
-            if (in_string) {
-                if (escaped) escaped = false;
-                else if (ch == '\\') escaped = true;
-                else if (ch == '"') in_string = false;
-                continue;
-            }
-            if (ch == '"') in_string = true;
-            else if (ch == '{') ++depth;
-            else if (ch == '}' && --depth == 0U) {
-                ++position;
-                break;
-            }
-        }
-        if (depth != 0U || in_string) {
-            throw std::runtime_error("unterminated result object");
-        }
-
-        const std::string object = json.substr(object_start, position - object_start);
-        (void)required_string(object, "operation");
-        (void)required_uint(object, "samples");
-        const uint64_t min_ns = required_uint(object, "min_ns", true);
-        const uint64_t median_ns = required_uint(object, "median_ns", true);
-        const uint64_t p95_ns = required_uint(object, "p95_ns", true);
-        const uint64_t max_ns = required_uint(object, "max_ns", true);
+        (void)required_string(item, "operation");
+        (void)required_uint(item, "samples");
+        (void)required_uint(item, "matches", true);
+        const uint64_t min_ns = required_uint(item, "min_ns", true);
+        const uint64_t median_ns = required_uint(item, "median_ns", true);
+        const uint64_t p95_ns = required_uint(item, "p95_ns", true);
+        const uint64_t max_ns = required_uint(item, "max_ns", true);
         if (!(min_ns <= median_ns && median_ns <= p95_ns && p95_ns <= max_ns)) {
             throw std::runtime_error("timing quantiles are out of order");
         }
-        ++result_count;
-    }
-
-    if (result_count == 0U) {
-        throw std::runtime_error("results array must not be empty");
     }
 }
 
-void validate_report(const std::string& report, const std::string& binary_path) {
-    const std::string provenance = extract_object(report, "provenance");
-
+void validate_report(const JsonValue& report, const std::string& binary_path) {
+    if (report.type != JsonValue::Type::Object) {
+        throw std::runtime_error("benchmark report root must be an object");
+    }
     if (required_uint(report, "schema_version") != 1U) {
         throw std::runtime_error("unsupported schema_version");
     }
 
+    const JsonValue& provenance = required_field(report, "provenance");
+    if (provenance.type != JsonValue::Type::Object) {
+        throw std::runtime_error("provenance must be an object");
+    }
     (void)required_string(provenance, "os");
     (void)required_string(provenance, "compiler");
     const std::string build_type = required_string(provenance, "build_type");
@@ -213,13 +407,9 @@ void validate_report(const std::string& report, const std::string& binary_path) 
 
     validate_results(report);
 
-    const std::string commit = has_key(provenance, "commit")
-        ? required_string(provenance, "commit") : std::string();
-    const std::string dirty = has_key(provenance, "source_dirty")
-        ? required_string(provenance, "source_dirty") : "unknown";
-    const std::string context = has_key(provenance, "bench_context")
-        ? required_string(provenance, "bench_context") : "unknown";
-
+    const std::string commit = optional_string(provenance, "commit", "");
+    const std::string dirty = optional_string(provenance, "source_dirty", "unknown");
+    const std::string context = optional_string(provenance, "bench_context", "unknown");
     if (build_type == "Release" &&
         std::regex_match(commit, std::regex("[0-9a-f]{40}")) &&
         dirty == "false" && context == "controlled-release") {
@@ -229,16 +419,77 @@ void validate_report(const std::string& report, const std::string& binary_path) 
     }
 }
 
+bool parser_rejects(const std::string& input) {
+    try {
+        (void)JsonParser(input).parse();
+        return false;
+    } catch (const std::exception&) {
+        return true;
+    }
+}
+
+int run_json_parser_self_tests() {
+    try {
+        const JsonValue valid = JsonParser(
+            R"({"message":"string with \"provenance\": { and braces }","provenance":{"build_type":"Release","note":"close } and \"quote\""}})"
+        ).parse();
+        const auto provenance = valid.object_value.find("provenance");
+        if (valid.type != JsonValue::Type::Object ||
+            provenance == valid.object_value.end() ||
+            provenance->second.type != JsonValue::Type::Object ||
+            required_string(provenance->second, "build_type") != "Release" ||
+            required_string(provenance->second, "note") != "close } and \"quote\"") {
+            throw std::runtime_error("valid escaped strings or nested object were parsed incorrectly");
+        }
+
+        const JsonValue string_only = JsonParser(
+            R"({"message":"\"provenance\": {\"build_type\":\"Release\"}"})"
+        ).parse();
+        if (string_only.object_value.find("provenance") != string_only.object_value.end()) {
+            throw std::runtime_error("key-like text inside a string became an object property");
+        }
+
+        if (!parser_rejects(R"({"provenance":{},"provenance":{}})")) {
+            throw std::runtime_error("duplicate keys after unicode decoding were accepted");
+        }
+        if (!parser_rejects(R"({"provenance": })")) {
+            throw std::runtime_error("malformed object value was accepted");
+        }
+        if (!parser_rejects(R"({"provenance":{},})")) {
+            throw std::runtime_error("trailing object comma was accepted");
+        }
+        if (!parser_rejects(R"({"value":"bad\q escape"})")) {
+            throw std::runtime_error("invalid string escape was accepted");
+        }
+        if (!parser_rejects("{\"value\":\"line one\nline two\"}")) {
+            throw std::runtime_error("unescaped control character was accepted");
+        }
+        if (!parser_rejects(R"({"value":"ok"} trailing)")) {
+            throw std::runtime_error("trailing non-JSON text was accepted");
+        }
+
+        std::cout << "PASS: strict JSON parser self-tests (escaping, property scope, unicode keys, duplicates, malformed input)\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << "FAIL: JSON parser self-test: " << error.what() << '\n';
+        return 1;
+    }
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string(argv[1]) == "--self-test-json-parser") {
+        return run_json_parser_self_tests();
+    }
     if (argc != 3) {
-        std::cerr << "Usage: benchmark_evidence_validator <report.json> <binary-file>\n";
+        std::cerr << "Usage: benchmark_evidence_validator <report.json> <binary-file>\n"
+                  << "       benchmark_evidence_validator --self-test-json-parser\n";
         return 2;
     }
 
     try {
-        const std::string report = read_file(argv[1]);
+        const JsonValue report = JsonParser(read_file(argv[1])).parse();
         validate_report(report, argv[2]);
         std::cout << "PASS: benchmark report contract and binary integrity\n";
         return 0;
@@ -247,4 +498,3 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 }
-

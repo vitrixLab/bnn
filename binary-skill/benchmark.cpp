@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "binary_skill.hpp"
+#include "build_provenance.hpp"
 
 #ifdef _WIN32
 #define BNN_POPEN _popen
@@ -29,33 +30,9 @@ static int pipe_close(std::FILE* pipe) {
 #endif
 }
 
-static std::string get_git_commit() {
-    char buffer[128] = {0};
-    std::FILE* pipe = BNN_POPEN("git rev-parse HEAD 2>/dev/null", "r");
-    if (!pipe) {
-        return "unknown";
-    }
-    if (!std::fgets(buffer, sizeof(buffer), pipe)) {
-        pipe_close(pipe);
-        return "unknown";
-    }
-    if (pipe_close(pipe) != 0) {
-        return "unknown";
-    }
-
-    std::string sha = buffer;
-    if (!sha.empty() && sha.back() == '\n') {
-        sha.pop_back();
-    }
-    if (sha.size() >= 40) {
-        return sha.substr(0, 40);
-    }
-    return sha.empty() ? "unknown" : sha;
-}
-
 static std::string get_git_dirty_state() {
     char buffer[128] = {0};
-    std::FILE* pipe = BNN_POPEN("git status --porcelain 2>/dev/null", "r");
+    std::FILE* pipe = BNN_POPEN("git status --porcelain", "r");
     if (!pipe) {
         return "unknown";
     }
@@ -230,7 +207,7 @@ int main(int argc, char* argv[]) {
 
     // Capture source provenance BEFORE opening/truncating benchmark_results.json
     // so a clean checkout is not falsely marked dirty by the report itself.
-    const std::string git_commit = get_git_commit();
+    const std::string git_commit = BNN_BUILD_GIT_COMMIT;
     const std::string source_dirty = get_git_dirty_state();
     const std::string bench_context = "controlled-release";
 

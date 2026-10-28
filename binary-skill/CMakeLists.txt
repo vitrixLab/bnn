@@ -11,11 +11,38 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
 endif()
 
+
+# Embed the checkout revision used to configure this build. This avoids
+# attributing a binary to a different revision based on its runtime working directory.
+find_package(Git QUIET)
+set(BNN_BUILD_GIT_COMMIT "unknown")
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --verify HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _bnn_git_sha
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _bnn_git_result
+        ERROR_QUIET
+    )
+    string(LENGTH "${_bnn_git_sha}" _bnn_git_sha_length)
+    if(_bnn_git_result EQUAL 0 AND
+       _bnn_git_sha_length EQUAL 40 AND
+       _bnn_git_sha MATCHES "^[0-9a-fA-F]+$")
+        set(BNN_BUILD_GIT_COMMIT "${_bnn_git_sha}")
+    endif()
+endif()
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/build_provenance.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/build_provenance.hpp"
+    @ONLY
+)
+
 add_executable(binary_skill_cli main.cpp binary_skill.hpp)
 target_include_directories(binary_skill_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(benchmark_runner benchmark.cpp binary_skill.hpp)
-target_include_directories(benchmark_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(benchmark_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(benchmark_evidence_validator benchmark_evidence_validator.cpp binary_skill.hpp)
 target_include_directories(benchmark_evidence_validator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
