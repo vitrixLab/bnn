@@ -197,8 +197,8 @@ int main(int argc, char* argv[]) {
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
                  << "    \"commit\": " << (source_commit ? std::string("\"") + source_commit + "\"" : "null") << ",\n"
-                 << "    \"source_dirty\": " << (source_dirty ? std::string("\"") + source_dirty + "\"" : "\"unknown\"") << ",\n"
-                 << "    \"bench_context\": " << (bench_context ? std::string("\"") + bench_context + "\"" : "\"unknown\"") << ",\n"
+                 << "    \"source_dirty\": " << (source_dirty.empty() ? "\"unknown\"" : std::string("\"") + source_dirty + "\"") << ",\n"
+                 << "    \"bench_context\": " << (bench_context.empty() ? "\"unknown\"" : std::string("\"") + bench_context + "\"") << ",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
