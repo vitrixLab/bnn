@@ -11,6 +11,54 @@
 
 namespace {
 
+std::string extract_object(const std::string& json, const std::string& key) {
+    const std::string needle = "\"" + key + "\"";
+    const auto start = json.find(needle);
+    if (start == std::string::npos) {
+        throw std::runtime_error("missing object: " + key);
+    }
+
+    const auto colon = json.find(':', start);
+    if (colon == std::string::npos) {
+        throw std::runtime_error("invalid object: " + key);
+    }
+
+    const auto brace_open = json.find('{', colon);
+    if (brace_open == std::string::npos) {
+        throw std::runtime_error("missing object body: " + key);
+    }
+
+    unsigned depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (std::size_t i = brace_open; i < json.size(); ++i) {
+        const char ch = json[i];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++depth;
+        } else if (ch == '}') {
+            --depth;
+            if (depth == 0) {
+                return json.substr(brace_open, i - brace_open + 1);
+            }
+        }
+    }
+
+    throw std::runtime_error("unterminated object: " + key);
+}
+
 std::string read_file(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
@@ -116,14 +164,16 @@ void validate_results(const std::string& json) {
 }
 
 void validate_report(const std::string& report, const std::string& binary_path) {
+    const std::string provenance = extract_object(report, "provenance");
+
     if (required_uint(report, "schema_version") != 1U) {
         throw std::runtime_error("unsupported schema_version");
     }
 
-    (void)required_string(report, "os");
-    (void)required_string(report, "compiler");
-    const std::string build_type = required_string(report, "build_type");
-    (void)required_uint(report, "iterations_per_op");
+    (void)required_string(provenance, "os");
+    (void)required_string(provenance, "compiler");
+    const std::string build_type = required_string(provenance, "build_type");
+    (void)required_uint(provenance, "iterations_per_op");
     (void)required_uint(report, "skill_count");
 
     const uint64_t expected_size = required_uint(report, "file_size_bytes", true);
@@ -143,12 +193,12 @@ void validate_report(const std::string& report, const std::string& binary_path) 
 
     validate_results(report);
 
-    const std::string commit = has_key(report, "commit")
-        ? required_string(report, "commit") : std::string();
-    const std::string dirty = has_key(report, "source_dirty")
-        ? required_string(report, "source_dirty") : "unknown";
-    const std::string context = has_key(report, "bench_context")
-        ? required_string(report, "bench_context") : "unknown";
+    const std::string commit = has_key(provenance, "commit")
+        ? required_string(provenance, "commit") : std::string();
+    const std::string dirty = has_key(provenance, "source_dirty")
+        ? required_string(provenance, "source_dirty") : "unknown";
+    const std::string context = has_key(provenance, "bench_context")
+        ? required_string(provenance, "bench_context") : "unknown";
 
     if (build_type == "Release" &&
         std::regex_match(commit, std::regex("[0-9a-f]{40}")) &&
@@ -177,3 +227,4 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 }
+

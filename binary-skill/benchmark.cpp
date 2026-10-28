@@ -5,7 +5,46 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <cstdio>
+#include <cstdlib>
 #include "binary_skill.hpp"
+
+static std::string get_git_commit() {
+    char buffer[128] = {0};
+    std::FILE* pipe = popen("git rev-parse HEAD 2>/dev/null", "r");
+    if (!pipe) {
+        return "unknown";
+    }
+    if (!std::fgets(buffer, sizeof(buffer), pipe)) {
+        pclose(pipe);
+        return "unknown";
+    }
+    pclose(pipe);
+
+    std::string sha = buffer;
+    if (!sha.empty() && sha.back() == '\n') {
+        sha.pop_back();
+    }
+    if (sha.size() >= 40) {
+        return sha.substr(0, 40);
+    }
+    return sha.empty() ? "unknown" : sha;
+}
+
+static std::string get_git_dirty_state() {
+    char buffer[128] = {0};
+    std::FILE* pipe = popen("git status --porcelain 2>/dev/null", "r");
+    if (!pipe) {
+        return "unknown";
+    }
+    std::string out;
+    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        out += buffer;
+    }
+    pclose(pipe);
+
+    return out.empty() ? "false" : "true";
+}
 
 struct StatResult {
     std::string operation;
@@ -170,11 +209,16 @@ int main(int argc, char* argv[]) {
     if (json_out.is_open()) {
         std::string safe_bin_path = bin_path;
         std::replace(safe_bin_path.begin(), safe_bin_path.end(), '\\', '/');
+        const std::string git_commit = get_git_commit();
+        const std::string source_dirty = get_git_dirty_state();
+        const std::string bench_context = "controlled-release";
 
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
-                 << "    \"commit\": \"b251258\",\n"
+                 << "    \"commit\": \"" << git_commit << "\",\n"
+                 << "    \"source_dirty\": \"" << source_dirty << "\",\n"
+                 << "    \"bench_context\": \"" << bench_context << "\",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
@@ -225,3 +269,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
