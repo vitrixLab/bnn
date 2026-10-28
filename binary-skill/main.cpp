@@ -148,6 +148,13 @@ int main(int argc, char* argv[]) {
                 std::remove(test_bin.c_str());
                 return 1;
             }
+            if (t_err.find("stored SHA-256 does not match computed payload digest") == std::string::npos) {
+                std::cerr << "FAIL: Tamper test failed for an unexpected reason: " << t_err << "\\n";
+                tamp_reader.close();
+                std::remove(tampered_bin.c_str());
+                std::remove(test_bin.c_str());
+                return 1;
+            }
             tamp_reader.close();
             std::remove(tampered_bin.c_str());
             std::cout << "  [Adversarial] Tampered payload detection: PASS (fixture opened successfully, digest mismatch detected: " << t_err << ")\n";
