@@ -133,8 +133,7 @@ jobs:
         run: |
           probe="$RUNNER_TEMP/bnn-provenance-probe"
           percent_input="$RUNNER_TEMP/bnn%provenance-input.bin"
-          mkdir -p "$probe"
-          cp -a . "$probe/"
+          git clone --no-hardlinks "$GITHUB_WORKSPACE" "$probe"
           cp "$probe/binary-skill/secondbrain.bin" "$percent_input"
           cmake -S "$probe/binary-skill" -B "$probe/build-probe" -DCMAKE_BUILD_TYPE=Debug -DBNN_BENCH_CONTEXT=ci-smoke
           # Mutate a source file after configure; the next build must reconfigure
