@@ -196,7 +196,7 @@ int main(int argc, char* argv[]) {
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
-                 << "    \"commit\": " << (source_commit ? std::string("\"") + source_commit + "\"" : "null") << ",\n"
+                 << "    \"commit\": " << (source_commit.empty() ? "null" : std::string("\"") + source_commit + "\"") << ",\n"
                  << "    \"source_dirty\": " << (source_dirty.empty() ? "\"unknown\"" : std::string("\"") + source_dirty + "\"") << ",\n"
                  << "    \"bench_context\": " << (bench_context.empty() ? "\"unknown\"" : std::string("\"") + bench_context + "\"") << ",\n"
 #ifdef _WIN32
