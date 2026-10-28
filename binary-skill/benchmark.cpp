@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <cstdlib>
 #include "binary_skill.hpp"
 
 struct StatResult {
@@ -15,6 +16,7 @@ struct StatResult {
     uint64_t median_ns;
     uint64_t p95_ns;
     size_t matches;
+    std::vector<uint64_t> raw_samples_ns;
 };
 
 template <typename Func>
@@ -31,6 +33,7 @@ StatResult run_benchmark(const std::string& op_name, size_t iterations, Func&& f
         matches = m;
     }
 
+    const std::vector<uint64_t> raw_samples_ns = times;
     std::sort(times.begin(), times.end());
 
     StatResult res;
@@ -41,6 +44,7 @@ StatResult run_benchmark(const std::string& op_name, size_t iterations, Func&& f
     res.median_ns = times[iterations / 2];
     res.p95_ns = times[static_cast<size_t>(iterations * 0.95)];
     res.matches = matches;
+    res.raw_samples_ns = raw_samples_ns;
     return res;
 }
 
