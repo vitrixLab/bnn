@@ -9,17 +9,39 @@
 #include <cstdlib>
 #include "binary_skill.hpp"
 
+#ifdef _WIN32
+#define BNN_POPEN _popen
+#define BNN_PCLOSE _pclose
+#else
+#include <sys/wait.h>
+#define BNN_POPEN popen
+#define BNN_PCLOSE pclose
+#endif
+
+static int pipe_close(std::FILE* pipe) {
+#ifdef _WIN32
+    return _pclose(pipe);
+#else
+    int status = BNN_PCLOSE(pipe);
+    if (status == -1) return -1;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return -1;
+#endif
+}
+
 static std::string get_git_commit() {
     char buffer[128] = {0};
-    std::FILE* pipe = popen("git rev-parse HEAD 2>/dev/null", "r");
+    std::FILE* pipe = BNN_POPEN("git rev-parse HEAD 2>/dev/null", "r");
     if (!pipe) {
         return "unknown";
     }
     if (!std::fgets(buffer, sizeof(buffer), pipe)) {
-        pclose(pipe);
+        pipe_close(pipe);
         return "unknown";
     }
-    pclose(pipe);
+    if (pipe_close(pipe) != 0) {
+        return "unknown";
+    }
 
     std::string sha = buffer;
     if (!sha.empty() && sha.back() == '\n') {
@@ -33,7 +55,7 @@ static std::string get_git_commit() {
 
 static std::string get_git_dirty_state() {
     char buffer[128] = {0};
-    std::FILE* pipe = popen("git status --porcelain 2>/dev/null", "r");
+    std::FILE* pipe = BNN_POPEN("git status --porcelain 2>/dev/null", "r");
     if (!pipe) {
         return "unknown";
     }
@@ -41,7 +63,9 @@ static std::string get_git_dirty_state() {
     while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         out += buffer;
     }
-    pclose(pipe);
+    if (pipe_close(pipe) != 0) {
+        return "unknown";
+    }
 
     return out.empty() ? "false" : "true";
 }
@@ -204,14 +228,17 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "========================================================================================\n";
 
+    // Capture source provenance BEFORE opening/truncating benchmark_results.json
+    // so a clean checkout is not falsely marked dirty by the report itself.
+    const std::string git_commit = get_git_commit();
+    const std::string source_dirty = get_git_dirty_state();
+    const std::string bench_context = "controlled-release";
+
     // Write machine-readable JSON results schema (Section 3.4 compliance + provenance)
     std::ofstream json_out("benchmark_results.json");
     if (json_out.is_open()) {
         std::string safe_bin_path = bin_path;
         std::replace(safe_bin_path.begin(), safe_bin_path.end(), '\\', '/');
-        const std::string git_commit = get_git_commit();
-        const std::string source_dirty = get_git_dirty_state();
-        const std::string bench_context = "controlled-release";
 
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"

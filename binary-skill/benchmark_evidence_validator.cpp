@@ -13,50 +13,70 @@ namespace {
 
 std::string extract_object(const std::string& json, const std::string& key) {
     const std::string needle = "\"" + key + "\"";
-    const auto start = json.find(needle);
-    if (start == std::string::npos) {
-        throw std::runtime_error("missing object: " + key);
-    }
+    std::size_t search_from = 0;
 
-    const auto colon = json.find(':', start);
-    if (colon == std::string::npos) {
-        throw std::runtime_error("invalid object: " + key);
-    }
-
-    const auto brace_open = json.find('{', colon);
-    if (brace_open == std::string::npos) {
-        throw std::runtime_error("missing object body: " + key);
-    }
-
-    unsigned depth = 0;
-    bool in_string = false;
-    bool escaped = false;
-    for (std::size_t i = brace_open; i < json.size(); ++i) {
-        const char ch = json[i];
-        if (in_string) {
-            if (escaped) {
-                escaped = false;
-            } else if (ch == '\\') {
-                escaped = true;
-            } else if (ch == '"') {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if (ch == '"') {
-            in_string = true;
-        } else if (ch == '{') {
-            ++depth;
-        } else if (ch == '}') {
-            --depth;
-            if (depth == 0) {
-                return json.substr(brace_open, i - brace_open + 1);
+    while ((search_from = json.find(needle, search_from)) != std::string::npos) {
+        // Verify this is a JSON key: preceded by '{', ',', or whitespace (start of object/array).
+        // This prevents matching the key text inside a string value (e.g. "some_provenance_data").
+        if (search_from > 0) {
+            const char prev = json[search_from - 1];
+            if (prev != '{' && prev != ',' && prev != ' ' && prev != '\t' &&
+                prev != '\n' && prev != '\r') {
+                ++search_from;
+                continue;
             }
         }
+
+        const auto key_end = search_from + needle.size();
+        const auto colon = json.find(':', key_end);
+        if (colon == std::string::npos) {
+            throw std::runtime_error("invalid object: " + key);
+        }
+
+        // Skip whitespace between colon and the opening brace.
+        std::size_t brace_pos = colon + 1;
+        while (brace_pos < json.size() &&
+               (json[brace_pos] == ' ' || json[brace_pos] == '\t' ||
+                json[brace_pos] == '\n' || json[brace_pos] == '\r')) {
+            ++brace_pos;
+        }
+
+        if (brace_pos >= json.size() || json[brace_pos] != '{') {
+            throw std::runtime_error("missing object body: " + key);
+        }
+
+        unsigned depth = 0;
+        bool in_string = false;
+        bool escaped = false;
+        for (std::size_t i = brace_pos; i < json.size(); ++i) {
+            const char ch = json[i];
+            if (in_string) {
+                if (escaped) {
+                    escaped = false;
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else if (ch == '"') {
+                    in_string = false;
+                }
+                continue;
+            }
+
+            if (ch == '"') {
+                in_string = true;
+            } else if (ch == '{') {
+                ++depth;
+            } else if (ch == '}') {
+                --depth;
+                if (depth == 0) {
+                    return json.substr(brace_pos, i - brace_pos + 1);
+                }
+            }
+        }
+
+        throw std::runtime_error("unterminated object: " + key);
     }
 
-    throw std::runtime_error("unterminated object: " + key);
+    throw std::runtime_error("missing object: " + key);
 }
 
 std::string read_file(const std::string& path) {
