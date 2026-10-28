@@ -3,8 +3,6 @@ name: Benchmark Evidence Contract
 on:
   pull_request:
     branches: ["**"]
-  push:
-    branches: ["**"]
   workflow_dispatch:
 
 permissions:
