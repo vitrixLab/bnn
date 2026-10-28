@@ -52,6 +52,10 @@ int main(int argc, char* argv[]) {
     std::string bin_path = "secondbrain.bin";
     if (argc >= 2) bin_path = argv[1];
 
+    const char* source_commit = std::getenv("BNN_SOURCE_COMMIT");
+    const char* source_dirty = std::getenv("BNN_SOURCE_DIRTY");
+    const char* bench_context = std::getenv("BNN_BENCH_CONTEXT");
+
     std::cout << "Starting BNN Binary-Skill Benchmark Suite (50 iterations per op)...\n";
 
     bnn::BinarySkillReader reader;
@@ -178,7 +182,9 @@ int main(int argc, char* argv[]) {
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
-                 << "    \"commit\": \"b251258\",\n"
+                 << "    \\"commit\\": " << (source_commit ? std::string("\\\"") + source_commit + "\\\"" : "null") << ",\\n"
+                 << "    \\"source_dirty\\": " << (source_dirty ? std::string("\\\"") + source_dirty + "\\\"" : "\\\"unknown\\\"") << ",\\n"
+                 << "    \\"bench_context\\": " << (bench_context ? std::string("\\\"") + bench_context + "\\\"" : "\\\"unknown\\\"") << ",\\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
