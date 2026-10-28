@@ -69,6 +69,8 @@ int main(int argc, char* argv[]) {
     const std::string source_commit = environment_value("BNN_SOURCE_COMMIT");
     const std::string source_dirty = environment_value("BNN_SOURCE_DIRTY");
     const std::string bench_context = environment_value("BNN_BENCH_CONTEXT");
+    const std::string cpu_model = environment_value("BNN_CPU_MODEL");
+    const std::string build_flags = environment_value("BNN_BUILD_FLAGS");
 
     std::cout << "Starting BNN Binary-Skill Benchmark Suite (50 iterations per op)...\n";
 
@@ -199,6 +201,8 @@ int main(int argc, char* argv[]) {
                  << "    \"commit\": " << (source_commit.empty() ? "null" : std::string("\"") + source_commit + "\"") << ",\n"
                  << "    \"source_dirty\": " << (source_dirty.empty() ? "\"unknown\"" : std::string("\"") + source_dirty + "\"") << ",\n"
                  << "    \"bench_context\": " << (bench_context.empty() ? "\"unknown\"" : std::string("\"") + bench_context + "\"") << ",\n"
+                 << "    \"cpu_model\": " << (cpu_model.empty() ? "\"unknown\"" : std::string("\"") + cpu_model + "\"") << ",\n"
+                 << "    \"build_flags\": " << (build_flags.empty() ? "\"unknown\"" : std::string("\"") + build_flags + "\"") << ",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
