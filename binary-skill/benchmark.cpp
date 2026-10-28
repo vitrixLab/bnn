@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <cctype>
 #include "binary_skill.hpp"
 
 struct StatResult {
@@ -44,6 +45,46 @@ StatResult run_benchmark(const std::string& op_name, size_t iterations, Func&& f
     return res;
 }
 
+// Independent correctness oracle: plain case-insensitive substring matching.
+// This intentionally does not call BinarySkillReader::search_keyword().
+size_t oracle_keyword_count(const bnn::BinarySkillReader& reader, const std::string& query) {
+    if (query.empty()) return 0U;
+    std::string needle = query;
+    std::transform(needle.begin(), needle.end(), needle.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    size_t matches = 0U;
+    for (size_t i = 0U; i < reader.count(); ++i) {
+        const std::string fields[] = {
+            std::string(reader.name(i)),
+            std::string(reader.description(i)),
+            std::string(reader.body(i))
+        };
+        bool found = false;
+        for (std::string text : fields) {
+            std::transform(text.begin(), text.end(), text.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            if (text.find(needle) != std::string::npos) {
+                found = true;
+                break;
+            }
+        }
+        if (found) ++matches;
+    }
+    return matches;
+}
+
+void require_oracle_match(const bnn::BinarySkillReader& reader,
+                          const std::string& query) {
+    const size_t expected = oracle_keyword_count(reader, query);
+    const size_t actual = reader.search_keyword(query).size();
+    if (actual != expected) {
+        throw std::runtime_error("Benchmark correctness failure: search_keyword('" + query +
+                                 "') returned " + std::to_string(actual) +
+                                 " results; independent oracle expected " +
+                                 std::to_string(expected));
+    }
+}
+
 int main(int argc, char* argv[]) {
     std::string bin_path = "secondbrain.bin";
     if (argc >= 2) bin_path = argv[1];
@@ -60,6 +101,10 @@ int main(int argc, char* argv[]) {
     }
 
     const size_t ITERS = 50; // 50 repetitions for robust median/p95
+    // Correctness is checked outside timed regions against an independent oracle.
+    require_oracle_match(reader, "nvidia");
+    require_oracle_match(reader, "whisper");
+    require_oracle_match(reader, "xyznonexistent999");
     std::vector<StatResult> results;
 
     // 1. Process startup & memory map (Finding 4: explicitly fail if open fails)
