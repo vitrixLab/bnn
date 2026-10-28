@@ -351,7 +351,7 @@ std::string read_file(const std::string& path) {
 }
 
 void validate_results(const JsonValue& report) {
-    const JsonValue& results = required_field(report, "results");
+    const JsonValue results = required_field(report, "results");
     if (results.type != JsonValue::Type::Array || results.array_value.empty()) {
         throw std::runtime_error("results must be a non-empty array");
     }
@@ -380,7 +380,7 @@ void validate_report(const JsonValue& report, const std::string& binary_path) {
         throw std::runtime_error("unsupported schema_version");
     }
 
-    const JsonValue& provenance = required_field(report, "provenance");
+    const JsonValue provenance = required_field(report, "provenance");
     if (provenance.type != JsonValue::Type::Object) {
         throw std::runtime_error("provenance must be an object");
     }
@@ -408,7 +408,7 @@ void validate_report(const JsonValue& report, const std::string& binary_path) {
     validate_results(report);
 
     const std::string commit = required_string(provenance, "commit");
-    const JsonValue& dirty_value = required_field(provenance, "source_dirty");
+    const JsonValue dirty_value = required_field(provenance, "source_dirty");
     if (dirty_value.type != JsonValue::Type::Boolean) {
         throw std::runtime_error("field must be a JSON boolean: source_dirty");
     }
@@ -431,9 +431,9 @@ void validate_report(const JsonValue& report, const std::string& binary_path) {
 bool provenance_rejects(const std::string& input) {
     try {
         const JsonValue root = JsonParser(input).parse();
-        const JsonValue& provenance = required_field(root, "provenance");
+        const JsonValue provenance = required_field(root, "provenance");
         const std::string commit = required_string(provenance, "commit");
-        const JsonValue& dirty = required_field(provenance, "source_dirty");
+        const JsonValue dirty = required_field(provenance, "source_dirty");
         return !std::regex_match(commit, std::regex("[0-9a-f]{40}")) ||
                dirty.type != JsonValue::Type::Boolean;
     } catch (const std::exception&) {
