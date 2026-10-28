@@ -51,13 +51,16 @@ bool has_key(const std::string& object, const std::string& key) {
 }
 
 std::string required_object(const std::string& json, const std::string& key) {
-    const std::regex field(std::string("\\\"") + key + "\\\"[[:space:]]*:[[:space:]]*\\{");
-    std::smatch match;
-    if (!std::regex_search(json, match, field)) {
+    const std::string needle = "\"" + key + "\"";
+    const size_t key_position = json.find(needle);
+    if (key_position == std::string::npos) {
+        throw std::runtime_error("missing object field: " + key);
+    }
+    const size_t start = json.find('{', key_position + needle.size());
+    if (start == std::string::npos) {
         throw std::runtime_error("missing or invalid object field: " + key);
     }
-    size_t position = static_cast<size_t>(match.position() + match.length() - 1);
-    const size_t start = position;
+    size_t position = start;
     unsigned depth = 0U;
     bool in_string = false;
     bool escaped = false;
@@ -65,13 +68,14 @@ std::string required_object(const std::string& json, const std::string& key) {
         const char ch = json[position];
         if (in_string) {
             if (escaped) escaped = false;
-            else if (ch == '\\\\') escaped = true;
-            else if (ch == '\\"') in_string = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
             continue;
         }
-        if (ch == '\\"') in_string = true;
+        if (ch == '"') in_string = true;
         else if (ch == '{') ++depth;
         else if (ch == '}') {
+            if (depth == 0U) break;
             --depth;
             if (depth == 0U) return json.substr(start, position - start + 1U);
         }
