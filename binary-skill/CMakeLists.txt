@@ -38,10 +38,11 @@ if(GIT_FOUND)
         set(BNN_BUILD_GIT_COMMIT "${_bnn_git_sha}")
     endif()
 endif()
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" BNN_BUILD_SOURCE_DIR)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/build_provenance.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/build_provenance.hpp"
-    @ONLY
+    @ONLY ESCAPE_QUOTES
 )
 
 add_executable(binary_skill_cli main.cpp binary_skill.hpp)

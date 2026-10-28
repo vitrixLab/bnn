@@ -4,3 +4,4 @@
 // "unknown" is retained when the source revision cannot be established.
 #define BNN_BUILD_GIT_COMMIT "@BNN_BUILD_GIT_COMMIT@"
 #define BNN_BUILD_BENCH_CONTEXT "@BNN_BUILD_BENCH_CONTEXT@"
+#define BNN_BUILD_SOURCE_DIR "@BNN_BUILD_SOURCE_DIR@"

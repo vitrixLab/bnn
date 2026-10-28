@@ -30,9 +30,32 @@ static int pipe_close(std::FILE* pipe) {
 #endif
 }
 
+static std::string shell_quote(const std::string& value) {
+#ifdef _WIN32
+    // Windows file names cannot contain double quotes.
+    return "\"" + value + "\"";
+#else
+    // POSIX single-quote escaping also handles spaces and embedded apostrophes.
+    std::string quoted = "'";
+    for (char ch : value) {
+        if (ch == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += ch;
+        }
+    }
+    quoted += "'";
+    return quoted;
+#endif
+}
+
 static std::string get_git_dirty_state() {
+    // Inspect the source directory used to configure this binary, not whichever
+    // repository happens to be the caller's current working directory.
+    const std::string command =
+        "git -C " + shell_quote(BNN_BUILD_SOURCE_DIR) + " status --porcelain";
     char buffer[128] = {0};
-    std::FILE* pipe = BNN_POPEN("git status --porcelain", "r");
+    std::FILE* pipe = BNN_POPEN(command.c_str(), "r");
     if (!pipe) {
         return "unknown";
     }
@@ -43,7 +66,6 @@ static std::string get_git_dirty_state() {
     if (pipe_close(pipe) != 0) {
         return "unknown";
     }
-
     return out.empty() ? "false" : "true";
 }
 
