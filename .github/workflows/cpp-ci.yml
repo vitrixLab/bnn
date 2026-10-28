@@ -140,6 +140,8 @@ jobs:
           # and embed dirty=true. Keep generated build paths free of '%' because
           # MSBuild emits cmd.exe commands; pass the percent path as the binary argument.
           printf '\n// configure-to-build dirty-state regression probe\n' >> "$probe/binary-skill/benchmark.cpp"
+          # Force CMake's native regeneration check on every generator, including MSBuild.
+          printf '\n# force provenance regression reconfigure\n' >> "$probe/binary-skill/CMakeLists.txt"
           cmake --build "$probe/build-probe" --config Debug --target benchmark_runner --parallel
           mkdir -p "$probe/run-probe"
           cd "$probe/run-probe"
