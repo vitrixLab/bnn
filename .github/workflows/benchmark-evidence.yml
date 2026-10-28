@@ -12,15 +12,22 @@ permissions:
 
 jobs:
   validate-benchmark-evidence:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Configure strict C++17 build
         run: cmake -S binary-skill -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build C++ evidence validator
-        run: cmake --build build --target benchmark_evidence_validator --parallel 2
+        run: cmake --build build --target benchmark_runner benchmark_evidence_validator --parallel 2
       - name: Test strict JSON parsing and adversarial cases
         run: build/benchmark_evidence_validator --self-test-json-parser
-      - name: Validate benchmark report and binary integrity
-        run: build/benchmark_evidence_validator binary-skill/benchmark_results.json binary-skill/secondbrain.bin
+      - name: Generate fresh benchmark evidence
+        shell: bash
+        run: |
+          mkdir -p ci-evidence
+          cd ci-evidence
+          ../build/benchmark_runner ../binary-skill/secondbrain.bin
+          cd ..
+      - name: Validate generated evidence and binary integrity
+        run: build/benchmark_evidence_validator ci-evidence/benchmark_results.json binary-skill/secondbrain.bin
