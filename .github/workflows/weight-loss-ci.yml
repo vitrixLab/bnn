@@ -1,0 +1,34 @@
+name: Weight-loss quantization CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quantization-kernels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile and run with strict warnings
+        run: |
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion \
+            tests/weight_loss_test.cpp -o weight_loss_test
+          ./weight_loss_test
+
+      - name: Compile and run with AddressSanitizer and UndefinedBehaviorSanitizer
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          clang++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/weight_loss_test.cpp -o weight_loss_test_sanitized
+          ./weight_loss_test_sanitized
