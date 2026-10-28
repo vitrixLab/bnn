@@ -20,5 +20,7 @@ jobs:
         run: cmake -S binary-skill -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build C++ evidence validator
         run: cmake --build build --target benchmark_evidence_validator --parallel 2
+      - name: Test strict JSON parsing and adversarial cases
+        run: build/benchmark_evidence_validator --self-test-json-parser
       - name: Validate benchmark report and binary integrity
         run: build/benchmark_evidence_validator binary-skill/benchmark_results.json binary-skill/secondbrain.bin

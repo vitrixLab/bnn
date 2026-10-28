@@ -48,7 +48,7 @@ jobs:
             export CC=gcc
             export CXX=g++
           fi
-          cmake -S binary-skill -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake -S binary-skill -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBNN_BENCH_CONTEXT=ci-smoke
 
       - name: Build every C++ target with warnings enabled
         shell: bash
@@ -57,6 +57,15 @@ jobs:
             cmake --build build --config Debug --parallel
           else
             cmake --build build --parallel
+          fi
+
+      - name: Run strict JSON parser self-tests
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            ./build/Debug/benchmark_evidence_validator.exe --self-test-json-parser
+          else
+            ./build/benchmark_evidence_validator --self-test-json-parser
           fi
 
       - name: Run compiler round-trip self-test
