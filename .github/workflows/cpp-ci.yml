@@ -94,6 +94,30 @@ jobs:
           print(f"Binary integrity metadata PASS: bytes={len(data)}, sha256={actual}")
           PY
 
+      - name: Capture benchmark CPU model (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_ENV ("BNN_CPU_MODEL=" + $env:PROCESSOR_IDENTIFIER)
+
+      - name: Capture benchmark CPU model (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: echo "BNN_CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')" >> "$GITHUB_ENV"
+
+      - name: Capture benchmark CPU model (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "BNN_CPU_MODEL=$(sysctl -n machdep.cpu.brand_string)" >> "$GITHUB_ENV"
+
+      - name: Record configured compiler flags
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "BNN_BUILD_FLAGS=/W4 /WX /permissive-; CMake Debug" >> "$GITHUB_ENV"
+          else
+            echo "BNN_BUILD_FLAGS=-Wall -Wextra -Wpedantic -Wno-missing-field-initializers; CMake Debug" >> "$GITHUB_ENV"
+          fi
+
       - name: Run benchmark smoke test (not a performance gate)
         env:
           BNN_SOURCE_COMMIT: ${{ github.sha }}
