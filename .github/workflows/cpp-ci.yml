@@ -1,8 +1,6 @@
 name: Binary and C++ Engineering CI
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
     branches: ["**"]
   workflow_dispatch:
@@ -133,20 +131,23 @@ jobs:
       - name: Provenance regression — worktree change after configure (and Windows percent path)
         shell: bash
         run: |
-          probe="$RUNNER_TEMP/bnn%provenance-probe"
+          probe="$RUNNER_TEMP/bnn-provenance-probe"
+          percent_input="$RUNNER_TEMP/bnn%provenance-input.bin"
           mkdir -p "$probe"
           cp -a . "$probe/"
+          cp "$probe/binary-skill/secondbrain.bin" "$percent_input"
           cmake -S "$probe/binary-skill" -B "$probe/build-probe" -DCMAKE_BUILD_TYPE=Debug -DBNN_BENCH_CONTEXT=ci-smoke
           # Mutate a source file after configure; the next build must reconfigure
-          # and embed dirty=true. On Windows the source path also contains '%'.
+          # and embed dirty=true. Keep generated build paths free of '%' because
+          # MSBuild emits cmd.exe commands; pass the percent path as the binary argument.
           printf '\n// configure-to-build dirty-state regression probe\n' >> "$probe/binary-skill/benchmark.cpp"
           cmake --build "$probe/build-probe" --config Debug --target benchmark_runner --parallel
           mkdir -p "$probe/run-probe"
           cd "$probe/run-probe"
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            ../build-probe/Debug/benchmark_runner.exe ../binary-skill/secondbrain.bin
+            ../build-probe/Debug/benchmark_runner.exe "$percent_input"
           else
-            ../build-probe/benchmark_runner ../binary-skill/secondbrain.bin
+            ../build-probe/benchmark_runner "$percent_input"
           fi
           python - <<'PY'
           import json
