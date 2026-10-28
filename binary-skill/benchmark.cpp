@@ -169,7 +169,13 @@ int main(int argc, char* argv[]) {
                   << std::setw(14) << (r.median_ns / 1000.0)
                   << std::setw(14) << (r.p95_ns / 1000.0)
                   << std::setw(14) << (r.max_ns / 1000.0)
-                  << r.matches << "\n";
+                     << "      \"matches\": " << r.matches << ",\n"
+                     << "      \"raw_samples_ns\": [";
+            for (size_t j = 0; j < r.raw_samples_ns.size(); ++j) {
+                if (j != 0U) json_out << ", ";
+                json_out << r.raw_samples_ns[j];
+            }
+            json_out << "]\n"
     }
     std::cout << "========================================================================================\n";
 
@@ -182,9 +188,9 @@ int main(int argc, char* argv[]) {
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
-                 << "    \\"commit\\": " << (source_commit ? std::string("\\\"") + source_commit + "\\\"" : "null") << ",\\n"
-                 << "    \\"source_dirty\\": " << (source_dirty ? std::string("\\\"") + source_dirty + "\\\"" : "\\\"unknown\\\"") << ",\\n"
-                 << "    \\"bench_context\\": " << (bench_context ? std::string("\\\"") + bench_context + "\\\"" : "\\\"unknown\\\"") << ",\\n"
+                 << "    \"commit\": " << (source_commit ? std::string("\"") + source_commit + "\"" : "null") << ",\n"
+                 << "    \"source_dirty\": " << (source_dirty ? std::string("\"") + source_dirty + "\"" : "\"unknown\"") << ",\n"
+                 << "    \"bench_context\": " << (bench_context ? std::string("\"") + bench_context + "\"" : "\"unknown\"") << ",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
