@@ -95,6 +95,10 @@ jobs:
           PY
 
       - name: Run benchmark smoke test (not a performance gate)
+        env:
+          BNN_SOURCE_COMMIT: ${{ github.sha }}
+          BNN_SOURCE_DIRTY: "false"
+          BNN_BENCH_CONTEXT: "ci-smoke"
         shell: bash
         run: |
           mkdir -p ci-artifacts
