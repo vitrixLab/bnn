@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
         json_out << "{\n"
                  << "  \"schema_version\": 1,\n"
                  << "  \"provenance\": {\n"
-                 << "    \"commit\": \"b251258\",\n"
+                 << "    \"commit\": \"unknown\",\n"
 #ifdef _WIN32
                  << "    \"os\": \"Windows x64\",\n"
 #elif defined(__APPLE__)
