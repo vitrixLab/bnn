@@ -72,6 +72,15 @@ int main(int argc, char* argv[]) {
     const std::string cpu_model = environment_value("BNN_CPU_MODEL");
     const std::string build_flags = environment_value("BNN_BUILD_FLAGS");
 
+#ifndef BNN_CONFIGURED_SOURCE_COMMIT
+#define BNN_CONFIGURED_SOURCE_COMMIT "unknown"
+#endif
+#ifndef BNN_CONFIGURED_SOURCE_DIRTY
+#define BNN_CONFIGURED_SOURCE_DIRTY "unknown"
+#endif
+    if (source_commit.empty()) source_commit = BNN_CONFIGURED_SOURCE_COMMIT;
+    if (source_dirty.empty()) source_dirty = BNN_CONFIGURED_SOURCE_DIRTY;
+
     std::cout << "Starting BNN Binary-Skill Benchmark Suite (50 iterations per op)...\n";
 
     bnn::BinarySkillReader reader;
