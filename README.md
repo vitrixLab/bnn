@@ -81,7 +81,7 @@ Do not present a speedup figure as validated unless the baseline and candidate p
 ## Current limitations
 
 - Quantized kernels are not wired into nanoLM inference.
-- INT4 uses a symmetric per-row scale and the value range ([-7,7]); broader accuracy and workload testing is still needed.
+- INT4 uses a symmetric per-row scale and the value range `[-7, 7]`; broader accuracy and workload testing is still needed.
 - BIN1 numerical error must be compared with an FP32 reference on representative weights and activations.
 - Existing quantization tests are smoke tests, not comprehensive correctness or robustness evidence.
 - Large-dimension overflow, integer arithmetic, and index-boundary behavior need explicit review.
@@ -107,7 +107,7 @@ A result is not fully substantiated by a formula, a passing smoke test, or a tim
 A = C \land I \land N \land R \land P
 \]
 
-where (C) is correctness, (I) is integrity, (N) is numerical accuracy, (R) is reproducibility, and (P) is provenance. This is a proposed acceptance rule for research evidence, not a claim that every gate has already passed.
+where `C` means correctness, `I` means integrity, `N` means numerical accuracy, `R` means reproducibility, and `P` means provenance. The symbol `AND` means every condition must hold. This is a proposed acceptance rule for research evidence, not a claim that every gate has already passed.
 
 ## Contributing
 
