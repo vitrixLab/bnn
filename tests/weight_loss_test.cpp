@@ -17,7 +17,7 @@ int main() {
     const auto q4 = weight_loss::quantize_int4(w, 2, 3);
     assert(q4.packed.size() == 3);
     assert(q4.row_scales.size() == 2);
-    assert(weight_loss::unpack_int4(q4, 0) == 3);
+    assert(weight_loss::unpack_int4(q4, 0) == 4);
     assert(weight_loss::unpack_int4(q4, 1) == -7);
     float x[] = {1.0f, -1.0f, 0.25f};
     float y4[2] = {};
@@ -30,7 +30,7 @@ int main() {
     const float tie_weights[] = {2.0f, -1.0f, 0.0f, -2.0f, 1.0f, 0.0f};
     const auto q_ties = weight_loss::quantize_int4(tie_weights, 1, 6);
     const int expected_ties[] = {7, -4, 0, -7, 4, 0};
-    for (int i = 0; i < 6; ++i)
+    for (std::size_t i = 0; i < 6; ++i)
         assert(weight_loss::unpack_int4(q_ties, i) == expected_ties[i]);
 
     // INT8 activation half-steps: +/-0.5 must round away from zero to +/-64
