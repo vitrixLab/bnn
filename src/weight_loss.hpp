@@ -53,7 +53,7 @@ inline Int4Matrix quantize_int4(const float* weights, int rows, int cols) {
             const std::size_t i = static_cast<std::size_t>(r) * cols + c;
             int value = 0;
             if (scale != 0.0f) {
-                value = static_cast<int>(std::round(weights[i] / scale));
+                value = static_cast<int>(std::round((weights[i] / max_abs) * 7.0f));
                 value = std::max(-7, std::min(7, value));
             }
             const std::uint8_t nibble = static_cast<std::uint8_t>(value) & 0x0f;
@@ -81,7 +81,7 @@ inline void matvec_int4(const Int4Matrix& weights, const float* x, float* y) {
     std::vector<std::int8_t> xq(static_cast<std::size_t>(weights.cols), 0);
     if (x_scale != 0.0f) {
         for (int c = 0; c < weights.cols; ++c) {
-            const int v = static_cast<int>(std::round(x[c] / x_scale));
+            const int v = static_cast<int>(std::round((x[c] / max_abs) * 127.0f));
             xq[static_cast<std::size_t>(c)] =
                 static_cast<std::int8_t>(std::max(-127, std::min(127, v)));
         }
