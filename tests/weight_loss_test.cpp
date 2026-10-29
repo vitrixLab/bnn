@@ -24,6 +24,29 @@ int main() {
     weight_loss::matvec_int4(q4, x, y4);
     assert(std::isfinite(y4[0]) && std::isfinite(y4[1]));
 
+    // Rounding gate: normalize against the original max_abs before applying
+    // the integer range. This avoids half-tie drift from dividing by a rounded
+    // scale (max_abs / 7 or max_abs / 127).
+    const float tie_weights[] = {2.0f, -1.0f, 0.0f, -2.0f, 1.0f, 0.0f};
+    const auto q_ties = weight_loss::quantize_int4(tie_weights, 1, 6);
+    const int expected_ties[] = {7, -4, 0, -7, 4, 0};
+    for (int i = 0; i < 6; ++i)
+        assert(weight_loss::unpack_int4(q_ties, i) == expected_ties[i]);
+
+    // INT8 activation half-steps: +/-0.5 must round away from zero to +/-64
+    // when max_abs is 1, yielding outputs strictly outside +/-0.5.
+    const float activation_weights[] = {0.0f, 1.0f};
+    const auto q_activation = weight_loss::quantize_int4(activation_weights, 1, 2);
+    const float positive_half[] = {1.0f, 0.5f};
+    float positive_y = 0.0f;
+    weight_loss::matvec_int4(q_activation, positive_half, &positive_y);
+    assert(std::isfinite(positive_y) && positive_y > 0.5f);
+
+    const float negative_half[] = {1.0f, -0.5f};
+    float negative_y = 0.0f;
+    weight_loss::matvec_int4(q_activation, negative_half, &negative_y);
+    assert(std::isfinite(negative_y) && negative_y < -0.5f);
+
     const float zeros[] = {0.0f, 0.0f, 0.0f};
     const auto qzero = weight_loss::quantize_int4(zeros, 1, 3);
     float yz = 1.0f;
