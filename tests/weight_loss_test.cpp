@@ -25,6 +25,26 @@ int main() {
     assert(q4.row_scales.size() == 2);
     assert(weight_loss::unpack_int4(q4, 0) == 4);
     assert(weight_loss::unpack_int4(q4, 1) == -7);
+
+    // Half-ties are computed from the original values/max_abs, avoiding
+    // a scale-division result that can land just below the mathematical tie.
+    const float tie_weights[] = {2.0f, -1.0f, 0.0f, -2.0f, 1.0f, 0.0f};
+    const auto qtie = weight_loss::quantize_int4(tie_weights, 1, 6);
+    const int expected_ties[] = {7, -4, 0, -7, 4, 0};
+    for (std::size_t i = 0; i < 6; ++i)
+        assert(weight_loss::unpack_int4(qtie, i) == expected_ties[i]);
+
+    // INT8 activation half-steps must round symmetrically away from zero.
+    const float activation_weights[] = {0.0f, 1.0f};
+    const auto qactivation = weight_loss::quantize_int4(activation_weights, 1, 2);
+    const float positive_half_step[] = {1.0f, 0.5f};
+    const float negative_half_step[] = {1.0f, -0.5f};
+    float positive_output = 0.0f;
+    float negative_output = 0.0f;
+    weight_loss::matvec_int4(qactivation, positive_half_step, &positive_output);
+    weight_loss::matvec_int4(qactivation, negative_half_step, &negative_output);
+    assert(std::isfinite(positive_output) && positive_output > 0.5f);
+    assert(std::isfinite(negative_output) && negative_output < -0.5f);
     bool out_of_range_rejected = false;
     try { (void)weight_loss::unpack_int4(q4, 6); }
     catch (const std::out_of_range&) { out_of_range_rejected = true; }
