@@ -104,3 +104,31 @@ jobs:
             --suppress=missingIncludeSystem \
             --language=c++ --std=c++17 \
             src/nanolm.cpp
+
+
+  sandbox-tests:
+    name: NanoLM six-test sandbox (GCC / Docker network none)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build GCC/CMake test image
+        run: docker build -f test-bundle/Dockerfile -t bnn-nanolm-sandbox .
+
+      - name: Execute all six tests without network access
+        run: |
+          docker run --rm --network none \
+            -e BNN_NETWORK_ISOLATED=1 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            bnn-nanolm-sandbox
+
+      - name: Upload raw compiler and test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanolm-sandbox-raw-logs
+          path: build-nanolm/test-logs/
+          if-no-files-found: warn
+          retention-days: 14
