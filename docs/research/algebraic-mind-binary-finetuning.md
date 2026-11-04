@@ -189,18 +189,24 @@ Training arms: A4, A5 and A4-S, three seeds each, so 9 runs. Wall time uses the 
 
 | Reference | Status |
 |---|---|
-| Marcus, G. F. (2001). *The Algebraic Mind.* MIT Press. | **VERIFIED** (catalogue records) |
-| Marcus, Vijayan, Bandi Rao, Vishton (1999). Rule learning by seven-month-old infants. *Science.* | Citation from memory, UNVERIFIED |
-| Courbariaux, Bengio, David (2015). BinaryConnect. | Citation from memory, UNVERIFIED |
-| Courbariaux, Hubara, Soudry, El-Yaniv, Bengio (2016). Binarized Neural Networks. | Citation from memory, UNVERIFIED |
-| Rastegari et al. (2016). XNOR-Net. | Citation from memory, UNVERIFIED |
-| Bengio, Leonard, Courville (2013). Straight-through estimator. | Citation from memory, UNVERIFIED |
-| Hinton, Vinyals, Dean (2015). Distilling the knowledge in a neural network. | Citation from memory, UNVERIFIED |
-| Wang et al. (2023), BitNet; Ma et al. (2024), BitNet b1.58. | Citation from memory, UNVERIFIED |
-| Lake and Baroni (2018). Generalization without systematicity (SCAN). | Citation from memory, UNVERIFIED |
-| Fodor and Pylyshyn (1988). Connectionism and cognitive architecture. | Citation from memory, UNVERIFIED |
+| Marcus, G. F. (2001). *The Algebraic Mind: Integrating Connectionism and Cognitive Science.* MIT Press. Hardcover ISBN: 9780262133791; [official MIT Press record](https://mitpress.mit.edu/9780262632683/the-algebraic-mind/). | **VERIFIED — publisher metadata only**; book text/chapter/page claims remain UNKNOWN until directly checked |
+| Marcus, G. F., Vijayan, S., Bandi Rao, S., & Vishton, P. M. (1999). “Rule learning by seven-month-old infants.” *Science*, 283(5398), 77–80. DOI: [10.1126/science.283.5398.77](https://doi.org/10.1126/science.283.5398.77). | **VERIFIED — bibliographic record only**; empirical infant result, not evidence about nanoLM |
+| Courbariaux, M., Bengio, Y., & David, J.-P. (2015). “BinaryConnect: Training Deep Neural Networks with binary weights during propagations.” arXiv:1511.00363. [arXiv](https://arxiv.org/abs/1511.00363). | **VERIFIED — preprint record**; results remain task-specific empirical findings |
+| Hubara, I., Courbariaux, M., Soudry, D., El-Yaniv, R., & Bengio, Y. (2016). “Binarized Neural Networks.” *Advances in Neural Information Processing Systems 29*. [Official NeurIPS proceedings](https://proceedings.neurips.cc/paper/2016/hash/d8330f857a17c53d217014ee776bfd50-Abstract.html). | **VERIFIED — peer-reviewed proceedings**; reported 7× result is specific to the paper’s GPU-kernel comparison |
+| Rastegari, M., Ordonez, V., Redmon, J., & Farhadi, A. (2016). “XNOR-Net: ImageNet Classification Using Binary Convolutional Neural Networks.” arXiv:1603.05279. [arXiv](https://arxiv.org/abs/1603.05279). | **VERIFIED — preprint record**; results concern binary convolution/image-classification workloads |
+| Bengio, Y., Léonard, N., & Courville, A. (2013). “Estimating or Propagating Gradients Through Stochastic Neurons for Conditional Computation.” arXiv:1308.3432. [arXiv](https://arxiv.org/abs/1308.3432). | **VERIFIED — preprint record**; STE is described as a heuristic estimator, not the exact derivative of a hard sign function |
+| Hinton, Vinyals, & Dean (2015). “Distilling the Knowledge in a Neural Network.” | **[UNVERIFIED — DO NOT CITE]** — no acceptable stable source verified in this review |
+| Wang et al. (2023), BitNet; Ma et al. (2024), BitNet b1.58. | **[UNVERIFIED — DO NOT CITE]** — exact titles, authors and stable identifiers not verified here |
+| Lake, B., & Baroni, M. (2018). “Generalization without Systematicity: On the Compositional Skills of Sequence-to-Sequence Recurrent Networks.” *Proceedings of the 35th International Conference on Machine Learning*, PMLR 80, 2873–2882. [Official PMLR proceedings](https://proceedings.mlr.press/v80/lake18a.html). | **VERIFIED — peer-reviewed proceedings**; empirical claims limited to the reported RNN/SCAN experiments |
+| Fodor and Pylyshyn (1988). “Connectionism and cognitive architecture.” | **[UNVERIFIED — DO NOT CITE]** — exact publication record and stable identifier not verified here |
 
 ---
+
+### Citation and claim boundary (updated 2026-11-04)
+
+Bibliographic verification establishes a publication record, not the correctness of every interpretation or its transfer to nanoLM. The Marcus book's chapter/page-level arguments remain **UNKNOWN against the text** until checked against a copy. The 1999 infant paper is an empirical result in its own experimental setting, not evidence that nanoLM exhibits rule-like generalization. BinaryConnect, BNN, XNOR-Net and STE do not demonstrate nanoLM speed, quality or generalization. The BNN 7× result is a setup-specific GPU-kernel comparison. XNOR-Net reports convolutional/image-classification results; do not rewrite its 58× convolution-operation speed result as a count of “fewer high-precision operations.”
+
+**Classification rule:** VERIFIED means the bibliographic record was checked; it does not mean nanoLM applicability is verified. The STE is a heuristic gradient estimator, not the exact derivative of sign. Rows marked **[UNVERIFIED — DO NOT CITE]** remain excluded until acceptable source metadata is verified.
 
 ## 11. Open questions for the owner
 
