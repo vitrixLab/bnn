@@ -42,6 +42,8 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <cstdint>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -187,7 +189,7 @@ struct ModelWeights {
     // Count parameters (matches "Total Parameters: 14,208" in AI.png)
     int count_params() const {
         int E = cfg.n_embd, V = cfg.vocab_size, T = cfg.block_size;
-        int layer_params = 4 * (4*E*E + 2*(4*E)*E); // 4 * (Q+K+V+wo) * E*E + fc1+fc2
+        int layer_params = cfg.n_layer * (4*E*E + 2*(4*E)*E); // 4 * (Q+K+V+wo) * E*E + fc1+fc2
         // = 4 * (4*16*16 + 16*64 + 64*16) = 4 * 3072 = 12288
         return layer_params + V*E + T*E; // + wte + wpe (lm_head is tied)
     }
@@ -245,8 +247,8 @@ struct AttentionCache {
     std::vector<float> x_in;       // [T×E]  input  (before RMSNorm)
     std::vector<float> xn;         // [T×E]  after  RMSNorm
     std::vector<float> Q, K, V;    // [T×E]  projected Q/K/V
-    std::vector<float> att;        // [T×T]  attention weights (post-softmax)
-    std::vector<float> att_pre;    // [T×T]  pre-softmax scores (for bwd)
+    std::vector<float> att;        // [H×T×T] attention weights (post-softmax)
+    std::vector<float> att_pre;    // [H×T×T] pre-softmax scores (for bwd)
     std::vector<float> sv;         // [T×E]  sum_v (weighted V)
     std::vector<float> y;          // [T×E]  output of wo
 };
@@ -323,7 +325,7 @@ static void attention_fwd(
 
     cache.x_in = x_in;
     cache.xn.resize(T*E); cache.Q.resize(T*E); cache.K.resize(T*E);
-    cache.V.resize(T*E);  cache.att.resize(T*T,0); cache.att_pre.resize(T*T,0);
+    cache.V.resize(T*E);  cache.att.resize(H*T*T,0); cache.att_pre.resize(H*T*T,0);
     cache.sv.resize(T*E,0); cache.y.resize(T*E,0);
 
     // RMSNorm per token
@@ -343,6 +345,7 @@ static void attention_fwd(
     zero(cache.sv);
     for (int h = 0; h < H; h++) {
         int hoff = h * dk;
+        const std::size_t head_offset = static_cast<std::size_t>(h) * static_cast<std::size_t>(T) * static_cast<std::size_t>(T);
 
         // Compute scores[t1][t2] = Q[t1,h] · K[t2,h] * scale  (causal mask)
         for (int t1 = 0; t1 < T; t1++) {
@@ -352,12 +355,12 @@ static void attention_fwd(
                     score += cache.Q[t1*E + hoff+d] * cache.K[t2*E + hoff+d];
                 score *= scale;
                 // Causal masking: future positions → -inf
-                cache.att_pre[t1*T + t2] = (t2 <= t1) ? score : -1e9f;
+                cache.att_pre[head_offset + static_cast<std::size_t>(t1*T + t2)] = (t2 <= t1) ? score : -1e9f;
             }
             // Softmax over t2 for this t1
-            float* row = &cache.att_pre[t1*T];
+            float* row = &cache.att_pre[head_offset + static_cast<std::size_t>(t1*T)];
             // compute softmax into cache.att[t1*T + ...]
-            float* arow = &cache.att[t1*T];
+            float* arow = &cache.att[head_offset + static_cast<std::size_t>(t1*T)];
             float m = row[0];
             for (int t2 = 0; t2 < T; t2++) m = std::max(m, row[t2]);
             float s = 0.0f;
@@ -371,7 +374,7 @@ static void attention_fwd(
             for (int d = 0; d < dk; d++) {
                 float acc = 0.0f;
                 for (int t2 = 0; t2 <= t1; t2++)
-                    acc += cache.att[t1*T+t2] * cache.V[t2*E + hoff+d];
+                    acc += cache.att[head_offset + static_cast<std::size_t>(t1*T+t2)] * cache.V[t2*E + hoff+d];
                 cache.sv[t1*E + hoff+d] = acc;
             }
         }
@@ -415,13 +418,14 @@ static void attention_bwd(
 
     for (int h = 0; h < H; h++) {
         int hoff = h * dk;
+        const std::size_t head_offset = static_cast<std::size_t>(h) * static_cast<std::size_t>(T) * static_cast<std::size_t>(T);
 
         // dV: dV[t2, h] += sum_t1 att[t1,t2] * dsv[t1, h]
         for (int t2 = 0; t2 < T; t2++) {
             for (int d = 0; d < dk; d++) {
                 float acc = 0.0f;
                 for (int t1 = t2; t1 < T; t1++)  // t2 <= t1 (causal)
-                    acc += cache.att[t1*T + t2] * dsv[t1*E + hoff+d];
+                    acc += cache.att[head_offset + static_cast<std::size_t>(t1*T + t2)] * dsv[t1*E + hoff+d];
                 dV[t2*E + hoff+d] += acc;
             }
         }
@@ -438,7 +442,7 @@ static void attention_bwd(
 
         // Backward through softmax → pre-softmax scores
         for (int t1 = 0; t1 < T; t1++) {
-            const float* a  = &cache.att[t1*T];
+            const float* a  = &cache.att[head_offset + static_cast<std::size_t>(t1*T)];
             float*       da = &datt[t1*T];
             // Jacobian of softmax: d(loss)/d(score_j) = a_j*(da_j - sum_k a_k*da_k)
             float dot = 0.0f;
@@ -555,6 +559,10 @@ static float forward(
     bool compute_loss = true)
 {
     int T = cfg.block_size, E = cfg.n_embd, V = cfg.vocab_size;
+    if (tokens.size() < static_cast<std::size_t>(T) ||
+        (compute_loss && tokens.size() < static_cast<std::size_t>(T + 1))) {
+        throw std::invalid_argument("forward: expected T context tokens and T+1 tokens when computing loss");
+    }
 
     // ── Embed: wte + wpe ──────────────────────────────────────────────────────
     cache.embed.resize(T*E);
@@ -614,11 +622,11 @@ static float forward(
     if (!compute_loss) return 0.0f;
 
     float loss = 0.0f;
-    for (int t = 0; t < T-1; t++) {
+    for (int t = 0; t < T; t++) {
         int target = tokens[t+1];
         loss -= std::log(cache.probs[t*V + target] + 1e-9f);
     }
-    return loss / float(T-1);
+    return loss / float(T);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -633,12 +641,15 @@ static void backward(
     const ForwardCache& cache)
 {
     int T = cfg.block_size, E = cfg.n_embd, V = cfg.vocab_size;
+    if (tokens.size() < static_cast<std::size_t>(T + 1)) {
+        throw std::invalid_argument("backward: expected T+1 tokens including the final next-token target");
+    }
 
     // ── Grad of loss w.r.t. logits (softmax + cross-entropy combined) ─────────
     // Backward flows from LOSS → Softmax → Logits (lm_head)
     std::vector<float> dlogits(T*V, 0.0f);
-    float scale_loss = 1.0f / float(T-1);
-    for (int t = 0; t < T-1; t++) {
+    float scale_loss = 1.0f / float(T);
+    for (int t = 0; t < T; t++) {
         int target = tokens[t+1];
         for (int v = 0; v < V; v++)
             dlogits[t*V+v] = scale_loss * cache.probs[t*V+v];
@@ -834,58 +845,137 @@ struct Tokenizer {
 //   - Byte order is native (little-endian); files are not portable to big-endian.
 //   A future version should add a 8-byte header: magic("BNNM") + version(uint32).
 // ─────────────────────────────────────────────────────────────────────────────
-static void save_weights(const ModelWeights& W, const std::string& path) {
-    std::ofstream f(path, std::ios::binary);
-    // Write config
-    f.write((char*)&W.cfg, sizeof(Config));
-    // Write wte, wpe
-    f.write((char*)W.wte.data(), W.wte.size() * sizeof(float));
-    f.write((char*)W.wpe.data(), W.wpe.size() * sizeof(float));
-    // Write blocks
-    for (const auto& b : W.blocks) {
-        auto wr = [&](const std::vector<float>& v){ f.write((char*)v.data(), v.size()*sizeof(float)); };
-        wr(b.attn.wq); wr(b.attn.wk); wr(b.attn.wv); wr(b.attn.wo);
-        wr(b.mlp.fc1); wr(b.mlp.fc2);
+static bool save_weights(const ModelWeights& W, const std::string& path) {
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) {
+        std::fprintf(stderr, "save_weights: cannot open %s\n", path.c_str());
+        return false;
+    }
+    auto write_bytes = [&](const void* data, std::size_t bytes, const char* name) {
+        if (bytes > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            std::fprintf(stderr, "save_weights: tensor '%s' is too large\n", name);
+            return false;
+        }
+        f.write(static_cast<const char*>(data), static_cast<std::streamsize>(bytes));
+        if (!f.good()) {
+            std::fprintf(stderr, "save_weights: failed writing '%s' to %s\n", name, path.c_str());
+            return false;
+        }
+        return true;
+    };
+    auto write_tensor = [&](const std::vector<float>& values, const char* name) {
+        return write_bytes(values.data(), values.size() * sizeof(float), name);
+    };
+    if (!write_bytes(&W.cfg, sizeof(Config), "config") ||
+        !write_tensor(W.wte, "wte") || !write_tensor(W.wpe, "wpe")) return false;
+    for (std::size_t bi = 0; bi < W.blocks.size(); ++bi) {
+        const auto& b = W.blocks[bi];
+        const std::string prefix = "block " + std::to_string(bi) + " ";
+        if (!write_tensor(b.attn.wq, (prefix + "wq").c_str()) ||
+            !write_tensor(b.attn.wk, (prefix + "wk").c_str()) ||
+            !write_tensor(b.attn.wv, (prefix + "wv").c_str()) ||
+            !write_tensor(b.attn.wo, (prefix + "wo").c_str()) ||
+            !write_tensor(b.mlp.fc1, (prefix + "fc1").c_str()) ||
+            !write_tensor(b.mlp.fc2, (prefix + "fc2").c_str())) return false;
+    }
+    f.flush();
+    if (!f.good()) {
+        std::fprintf(stderr, "save_weights: flush failed for %s\n", path.c_str());
+        return false;
+    }
+    f.close();
+    if (f.fail()) {
+        std::fprintf(stderr, "save_weights: close failed for %s\n", path.c_str());
+        return false;
     }
     std::printf("[save] wrote %s\n", path.c_str());
+    return true;
 }
 
 static bool load_weights(ModelWeights& W, const std::string& path) {
     std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    Config cfg; f.read((char*)&cfg, sizeof(Config));
-    // Validate configuration before use - guard against malformed files
-    if (cfg.vocab_size <= 0 || cfg.block_size <= 0 || cfg.n_embd <= 0 || cfg.n_head <= 0) {
-        std::fprintf(stderr, "load_weights: invalid configuration (vocab_size=%d, block_size=%d, n_embd=%d, n_head=%d)\n",
-                     cfg.vocab_size, cfg.block_size, cfg.n_embd, cfg.n_head);
+    if (!f.is_open()) {
+        std::fprintf(stderr, "load_weights: cannot open %s\n", path.c_str());
         return false;
     }
-    if (cfg.n_embd % cfg.n_head != 0) {
-        std::fprintf(stderr, "load_weights: n_embd (%d) must be divisible by n_head (%d)\n",
-                     cfg.n_embd, cfg.n_head);
-        return false;
-    }
-    W.init(cfg);
-    // P2-C fix: check stream health after every weight read so a truncated file is
-    // detected instead of silently delivering zero-initialised (default) weights.
-    auto rd = [&](std::vector<float>& v, const char* name) {
-        f.read((char*)v.data(), (std::streamsize)(v.size() * sizeof(float)));
-        if (!f.good()) {
-            std::fprintf(stderr, "load_weights: failed to read weight tensor '%s' from %s "
-                                 "(file truncated or I/O error)\n", name, path.c_str());
-        }
-    };
-    rd(W.wte, "wte"); rd(W.wpe, "wpe");
-    for (std::size_t bi = 0; bi < W.blocks.size(); ++bi) {
-        auto& b = W.blocks[bi];
-        rd(b.attn.wq, "wq"); rd(b.attn.wk, "wk"); rd(b.attn.wv, "wv"); rd(b.attn.wo, "wo");
-        rd(b.mlp.fc1, "fc1"); rd(b.mlp.fc2, "fc2");
-    }
+    Config cfg{};
+    f.read(reinterpret_cast<char*>(&cfg), static_cast<std::streamsize>(sizeof(Config)));
     if (!f.good()) {
-        std::fprintf(stderr, "load_weights: stream not good after reading weights from %s\n",
-                     path.c_str());
+        std::fprintf(stderr, "load_weights: incomplete configuration header in %s\n", path.c_str());
         return false;
     }
+    if (cfg.vocab_size <= 0 || cfg.block_size <= 0 || cfg.n_embd <= 0 ||
+        cfg.n_head <= 0 || cfg.n_layer <= 0 || cfg.n_embd % cfg.n_head != 0 ||
+        cfg.n_head > cfg.n_embd || cfg.vocab_size > 1000000 ||
+        cfg.block_size > 65536 || cfg.n_embd > 4096 || cfg.n_layer > 1024) {
+        std::fprintf(stderr, "load_weights: invalid or unsupported configuration in %s\n", path.c_str());
+        return false;
+    }
+
+    // Calculate exact checkpoint size with overflow checks before any tensor allocation.
+    std::uint64_t float_count = 0;
+    auto add_product = [&](std::uint64_t a, std::uint64_t b) {
+        const std::uint64_t max_value = std::numeric_limits<std::uint64_t>::max();
+        if (a != 0 && b > (max_value - float_count) / a) return false;
+        float_count += a * b;
+        return true;
+    };
+    const std::uint64_t E = static_cast<std::uint64_t>(cfg.n_embd);
+    const std::uint64_t V = static_cast<std::uint64_t>(cfg.vocab_size);
+    const std::uint64_t T = static_cast<std::uint64_t>(cfg.block_size);
+    const std::uint64_t L = static_cast<std::uint64_t>(cfg.n_layer);
+    if (!add_product(V, E) || !add_product(T, E) || !add_product(L, 12U * E * E)) {
+        std::fprintf(stderr, "load_weights: checkpoint dimensions overflow\n");
+        return false;
+    }
+    const std::uint64_t max_file_bytes = 1024ULL * 1024ULL * 1024ULL;
+    if (float_count > (max_file_bytes - sizeof(Config)) / sizeof(float)) {
+        std::fprintf(stderr, "load_weights: checkpoint exceeds 1 GiB safety limit\n");
+        return false;
+    }
+    const std::uint64_t expected_bytes =
+        static_cast<std::uint64_t>(sizeof(Config)) + float_count * sizeof(float);
+    f.seekg(0, std::ios::end);
+    const std::streamoff actual_size = f.tellg();
+    if (actual_size < 0 || static_cast<std::uint64_t>(actual_size) != expected_bytes) {
+        std::fprintf(stderr, "load_weights: checkpoint size mismatch for %s (expected %llu bytes)\n",
+                     path.c_str(), static_cast<unsigned long long>(expected_bytes));
+        return false;
+    }
+    f.seekg(static_cast<std::streamoff>(sizeof(Config)), std::ios::beg);
+    if (!f.good()) {
+        std::fprintf(stderr, "load_weights: cannot seek to payload in %s\n", path.c_str());
+        return false;
+    }
+
+    // Commit only after the complete payload has been read successfully.
+    ModelWeights candidate;
+    candidate.init(cfg);
+    auto read_tensor = [&](std::vector<float>& values, const char* name) {
+        const std::size_t bytes = values.size() * sizeof(float);
+        if (bytes > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            std::fprintf(stderr, "load_weights: tensor '%s' is too large\n", name);
+            return false;
+        }
+        f.read(reinterpret_cast<char*>(values.data()), static_cast<std::streamsize>(bytes));
+        if (!f.good()) {
+            std::fprintf(stderr, "load_weights: failed reading tensor '%s' from %s\n", name, path.c_str());
+            return false;
+        }
+        return true;
+    };
+    if (!read_tensor(candidate.wte, "wte") || !read_tensor(candidate.wpe, "wpe")) return false;
+    for (std::size_t bi = 0; bi < candidate.blocks.size(); ++bi) {
+        auto& b = candidate.blocks[bi];
+        const std::string prefix = "block " + std::to_string(bi) + " ";
+        if (!read_tensor(b.attn.wq, (prefix + "wq").c_str()) ||
+            !read_tensor(b.attn.wk, (prefix + "wk").c_str()) ||
+            !read_tensor(b.attn.wv, (prefix + "wv").c_str()) ||
+            !read_tensor(b.attn.wo, (prefix + "wo").c_str()) ||
+            !read_tensor(b.mlp.fc1, (prefix + "fc1").c_str()) ||
+            !read_tensor(b.mlp.fc2, (prefix + "fc2").c_str())) return false;
+    }
+    W = std::move(candidate);
     std::printf("[load] loaded %s\n", path.c_str());
     return true;
 }
@@ -955,28 +1045,24 @@ static std::string generate(
 // ─────────────────────────────────────────────────────────────────────────────
 // 19.  Training loop
 // ─────────────────────────────────────────────────────────────────────────────
-static void train(
+static bool train(
     const std::string& data_path,
     const std::string& model_path = "model.bin",
     int   max_iters   = 5000,
     int   eval_every  = 100,
     float lr          = 3e-3f)
 {
-    // Load data
     std::ifstream f(data_path);
-    if (!f) { std::fprintf(stderr, "Cannot open %s\n", data_path.c_str()); return; }
+    if (!f) { std::fprintf(stderr, "Cannot open %s\n", data_path.c_str()); return false; }
     std::string text((std::istreambuf_iterator<char>(f)), {});
     std::printf("[data] loaded %zu characters\n", text.size());
 
-    // Build tokenizer
     Tokenizer tok;
     tok.build(text);
     std::printf("[tok]  vocab_size = %d\n", tok.vocab_size());
     tok.save("vocab.bin");
-
     std::vector<int> data = tok.encode(text);
 
-    // Build model
     Config cfg;
     cfg.vocab_size = tok.vocab_size();
     ModelWeights W;
@@ -985,47 +1071,31 @@ static void train(
 
     Adam opt;
     opt.lr = lr;
-
     ForwardCache cache;
     std::mt19937 data_rng(0);
     int T = cfg.block_size;
 
-    // Guard: corpus must be long enough to produce at least one training sample.
-    // Each sample needs T+1 tokens (T context + 1 target), so data.size() >= T+2
-    // ensures the uniform_int_distribution upper bound is non-negative.
-    if ((int)data.size() < T + 2) {
-        std::fprintf(stderr, "train: corpus too short (%zu tokens after tokenisation); "
-                             "need at least %d tokens for block_size=%d\n",
+    if (static_cast<int>(data.size()) < T + 2) {
+        std::fprintf(stderr, "train: corpus too short (%zu tokens after tokenisation); need at least %d tokens for block_size=%d\n",
                      data.size(), T + 2, T);
-        return;
+        return false;
     }
 
     for (int iter = 0; iter < max_iters; iter++) {
-        // Random batch of 1 sequence
-        std::uniform_int_distribution<int> pos_dist(0, (int)data.size() - T - 2);
+        std::uniform_int_distribution<int> pos_dist(0, static_cast<int>(data.size()) - T - 2);
         int start_pos = pos_dist(data_rng);
-        std::vector<int> seq(data.begin() + start_pos,
-                             data.begin() + start_pos + T + 1);
-        std::vector<int> ctx(seq.begin(), seq.begin() + T);
-
-        // Forward
-        float loss = forward(cfg, W, ctx, cache, true);
-
-        // Backward
-        backward(cfg, W, ctx, cache);
-
-        // Optimiser step
+        std::vector<int> seq(data.begin() + start_pos, data.begin() + start_pos + T + 1);
+        float loss = forward(cfg, W, seq, cache, true);
+        backward(cfg, W, seq, cache);
         opt.update_all(W);
-
         if ((iter + 1) % eval_every == 0) {
-            auto t = std::chrono::steady_clock::now();
-            std::printf("[iter %5d] loss = %.4f\n", iter+1, loss);
+            std::printf("[iter %5d] loss = %.4f\n", iter + 1, loss);
         }
     }
 
-    // Save
-    save_weights(W, model_path);
+    if (!save_weights(W, model_path)) return false;
     std::printf("[done] model saved to %s\n", model_path.c_str());
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1049,7 +1119,7 @@ int main(int argc, char* argv[]) {
         std::string model_path = (argc > 3) ? argv[3] : "model.bin";
         int   iters = (argc > 4) ? std::stoi(argv[4]) : 5000;
         float lr    = (argc > 5) ? std::stof(argv[5]) : 3e-3f;
-        train(data_path, model_path, iters, 100, lr);
+        if (!train(data_path, model_path, iters, 100, lr)) return 1;
 
     } else if (mode == "gen") {
         if (argc < 5) { std::fprintf(stderr, "gen: need <model.bin> <vocab.bin> \"<seed>\"\n"); return 1; }
