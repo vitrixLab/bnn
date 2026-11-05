@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "chunking": "Markdown heading/file-based; source text remains in linked .md files; no embeddings generated",
+  "chunk_count": 13,
+  "chunks": [
+    {
+      "chunk_id": "BNN-RAG-001",
+      "source_path": "rag/00-scope-and-evidence-policy.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-002",
+      "source_path": "rag/01-conversation-chronology.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-003",
+      "source_path": "rag/02-decisions-and-authorizations.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-004",
+      "source_path": "rag/03-repository-and-triage-state.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-005",
+      "source_path": "rag/04-pr-verification-and-merge-gates.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-006",
+      "source_path": "rag/05-issue-closure-analysis.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-007",
+      "source_path": "rag/06-pr-solutions-import-history.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-008",
+      "source_path": "rag/07-research-context-and-attached-sources.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-009",
+      "source_path": "rag/08-followup-patch-source-analysis.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-010",
+      "source_path": "rag/09-open-gates-and-next-actions.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-011",
+      "source_path": "rag/evidence/source-manifest.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-012",
+      "source_path": "rag/evidence/evidence-register.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    },
+    {
+      "chunk_id": "BNN-RAG-013",
+      "source_path": "rag/README.md",
+      "chunk_strategy": "file-level; split by Markdown headings in downstream ingestion",
+      "metadata": {
+        "repository": "vitrixLab/bnn",
+        "scope": "conversation",
+        "corpus_build_date": "2026-11-05",
+        "evidence_policy": "rag/00-scope-and-evidence-policy.md",
+        "source_kind": "conversation_synthesis",
+        "external_ingestion": "not_performed"
+      }
+    }
+  ]
+}
