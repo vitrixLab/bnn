@@ -1,0 +1,5 @@
+[TEST] isolated_deterministic_replay
+[save] wrote /tmp/bnn-nanolm-deterministic-replay/model.bin
+[load] loaded /tmp/bnn-nanolm-deterministic-replay/model.bin
+save/load greedy replay is deterministic
+[PASS] isolated_deterministic_replay

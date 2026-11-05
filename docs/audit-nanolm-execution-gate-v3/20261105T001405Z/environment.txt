@@ -1,0 +1,51 @@
+NanoLM Sandbox Execution Gate — Environment Record
+===================================================
+RUN_ID: 20261105T001405Z
+Date (UTC): 2026-11-05T00:14:05Z
+
+WSL:
+  Default distribution: AlmaLinux-9
+  WSL version: 2
+  Distribution state: Running (during execution)
+
+OS (inside WSL):
+  NAME="AlmaLinux"
+  VERSION="9.8 (Olive Jaguar)"
+  ID="almalinux"
+  ID_LIKE="rhel centos fedora"
+  VERSION_ID="9.8"
+  PRETTY_NAME="AlmaLinux 9.8 (Olive Jaguar)"
+
+Kernel (inside WSL):
+  Linux DESKTOP-DOR225G 6.18.40.1-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Fri Jul 31 22:12:15 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+
+Compiler:
+  g++ (GCC) 11.5.0 20240719 (Red Hat 11.5.0-14)
+
+Build system:
+  cmake version 3.31.8
+  make /usr/bin/make
+
+Namespace tools:
+  unshare /usr/bin/unshare (util-linux-2.37.4-25.el9.x86_64)
+
+Container runtime:
+  docker: NOT INSTALLED
+  podman: NOT INSTALLED
+
+Network isolation:
+  Plain `unshare -n true`: FAILED — "unshare: unshare failed: Operation not permitted"
+  `unshare -n --map-root-user true`: SUCCEEDED (exit 0)
+  `unshare -n --map-root-user -- ip addr`: verified — only loopback interface (lo), state DOWN, no external network interfaces
+  Isolation method used: unshare -n --map-root-user (verified network-isolated namespace)
+  BNN_NETWORK_ISOLATED=1: set (runner executed inside pre-isolated namespace)
+  Isolation independently verified: YES
+
+Build directory:
+  /mnt/d/citrixlabph/audit-worktree/build-nanolm
+  Test log directory: build-nanolm/test-logs/
+
+Worktree mount:
+  /mnt/d/citrixlabph/audit-worktree (Windows D: drive, mounted via WSL)
+  Git from WSL: NOT AVAILABLE (.git worktree pointer references Windows path D:/...)
+  Git from Windows: OK

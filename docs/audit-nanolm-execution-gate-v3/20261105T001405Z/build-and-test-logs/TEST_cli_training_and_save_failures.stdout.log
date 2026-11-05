@@ -1,0 +1,6 @@
+[TEST] cli_training_and_save_failures
+[data] loaded 80 characters
+[tok]  vocab_size = 2
+[model] parameters = 13200
+CLI propagates checkpoint save failure with non-zero exit
+[PASS] cli_training_and_save_failures

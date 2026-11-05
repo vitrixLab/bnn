@@ -1,0 +1,1 @@
+load_weights: checkpoint size mismatch for /tmp/bnn-nanolm-truncated-checkpoint/truncated.bin (expected 56852 bytes)

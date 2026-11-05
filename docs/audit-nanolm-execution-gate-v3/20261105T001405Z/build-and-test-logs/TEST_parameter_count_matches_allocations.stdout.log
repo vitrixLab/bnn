@@ -1,0 +1,3 @@
+[TEST] parameter_count_matches_allocations
+dynamic layer count matches allocated tensors (424)
+[PASS] parameter_count_matches_allocations

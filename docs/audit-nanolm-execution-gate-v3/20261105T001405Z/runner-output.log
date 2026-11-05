@@ -1,0 +1,39 @@
+-- Configuring done (1.4s)
+-- Generating done (4.1s)
+-- Build files have been written to: /mnt/d/citrixlabph/audit-worktree/build-nanolm
+EXIT_CMAKE_CONFIGURE=0
+[100%] Built target nanolm
+EXIT_CMAKE_BUILD=0
+EXIT_HARNESS_COMPILE=0
+[TEST] attention_head_cache_and_gradient
+per-head cache and wq/wk/wv finite differences OK
+[PASS] attention_head_cache_and_gradient
+EXIT_TEST_attention_head_cache_and_gradient=0
+[TEST] next_token_full_window_reference
+T loss terms and final-position gradient OK
+[PASS] next_token_full_window_reference
+EXIT_TEST_next_token_full_window_reference=0
+[TEST] parameter_count_matches_allocations
+dynamic layer count matches allocated tensors (424)
+[PASS] parameter_count_matches_allocations
+EXIT_TEST_parameter_count_matches_allocations=0
+[TEST] checkpoint_rejects_before_allocation
+truncated checkpoint rejected before destination allocation/mutation
+[PASS] checkpoint_rejects_before_allocation
+load_weights: checkpoint size mismatch for /tmp/bnn-nanolm-truncated-checkpoint/truncated.bin (expected 56852 bytes)
+EXIT_TEST_checkpoint_rejects_before_allocation=0
+[TEST] cli_training_and_save_failures
+[data] loaded 80 characters
+[tok]  vocab_size = 2
+[model] parameters = 13200
+CLI propagates checkpoint save failure with non-zero exit
+[PASS] cli_training_and_save_failures
+save_weights: cannot open /tmp/bnn-nanolm-save-failure/missing-parent/model.bin
+EXIT_TEST_cli_training_and_save_failures=0
+[TEST] isolated_deterministic_replay
+[save] wrote /tmp/bnn-nanolm-deterministic-replay/model.bin
+[load] loaded /tmp/bnn-nanolm-deterministic-replay/model.bin
+save/load greedy replay is deterministic
+[PASS] isolated_deterministic_replay
+EXIT_TEST_isolated_deterministic_replay=0
+SUMMARY: all 6 NanoLM sandbox tests passed

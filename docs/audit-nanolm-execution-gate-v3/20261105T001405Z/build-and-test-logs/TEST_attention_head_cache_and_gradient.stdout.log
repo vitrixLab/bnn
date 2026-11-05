@@ -1,0 +1,3 @@
+[TEST] attention_head_cache_and_gradient
+per-head cache and wq/wk/wv finite differences OK
+[PASS] attention_head_cache_and_gradient

@@ -1,0 +1,3 @@
+[TEST] checkpoint_rejects_before_allocation
+truncated checkpoint rejected before destination allocation/mutation
+[PASS] checkpoint_rejects_before_allocation
