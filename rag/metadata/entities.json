@@ -1,0 +1,85 @@
+{
+  "repository": [
+    {
+      "id": "ENT-001",
+      "name": "vitrixLab/bnn",
+      "kind": "github_repository",
+      "status": "VERIFIED"
+    }
+  ],
+  "pull_requests": [
+    {
+      "id": "PR-15",
+      "status": "REPORTED_OPEN_MERGE_GATE_UNKNOWN"
+    },
+    {
+      "id": "PR-16",
+      "status": "REPORTED_OPEN_MERGE_GATE_UNKNOWN"
+    },
+    {
+      "id": "PR-8",
+      "status": "PRESERVATION_RESTRICTED_REPORTED"
+    }
+  ],
+  "issues": [
+    {
+      "id": "ISSUE-27",
+      "status": "PROTECTED_SCOPE_REPORTED"
+    },
+    {
+      "id": "ISSUE-28",
+      "status": "PROTECTED_SCOPE_REPORTED"
+    },
+    {
+      "id": "ISSUE-29",
+      "status": "PROTECTED_SCOPE_REPORTED"
+    },
+    {
+      "id": "ISSUE-35",
+      "status": "REPORTED_OPEN_PLANNING_NOT_VERIFIED"
+    },
+    {
+      "id": "ISSUE-31",
+      "status": "REPORTED_OPEN_IDLE_WAIT"
+    },
+    {
+      "id": "ISSUE-30",
+      "status": "REPORTED_OPEN_AUDIT_OPEN"
+    },
+    {
+      "id": "ISSUE-20",
+      "status": "REPORTED_OPEN_ACTIVE_TRACKS"
+    }
+  ],
+  "commits": [
+    {
+      "id": "5059af8242d32246a1231659c929023eff99f26a",
+      "source": "SRC-001",
+      "status": "PATCH_HEADER_ONLY"
+    },
+    {
+      "id": "17dbd5b35458822081b2d8aecd009805d343face",
+      "source": "CLINE-REPORT-001",
+      "status": "REPORTED_LOCAL_REMOTE_UNVERIFIED"
+    },
+    {
+      "id": "4628303831a1233aee5a81db8614ddb73633a6b0",
+      "source": "SRC-002",
+      "status": "REPORTED_PRIOR_AUDIT_SOURCE"
+    }
+  ],
+  "sources": [
+    {
+      "id": "SRC-001",
+      "file": "bnn-followup.patch"
+    },
+    {
+      "id": "SRC-002",
+      "file": "algebraic-mind-binary-finetuning.md"
+    },
+    {
+      "id": "SRC-003",
+      "file": "DRAFT_Measuring_Dual_Process_and_Tri_System_Constructs_in_Information_Technology__A_Scoping_Review_and_a_Design_Specification_for_a_System_3_A_Measure_v3.pdf"
+    }
+  ]
+}
