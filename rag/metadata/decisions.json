@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "decisions": [
+    {
+      "id": "DEC-001",
+      "date": "2026-11-05",
+      "decision": "Build repo-destination RAG corpus from conversation scope",
+      "status": "USER_AUTHORIZED",
+      "details": [
+        "preserve provenance",
+        "preserve chronology",
+        "preserve decisions and authorizations",
+        "preserve unresolved gates",
+        "do not claim external ingestion"
+      ]
+    },
+    {
+      "id": "DEC-002",
+      "decision": "Do not merge PR #15/#16 while branch-protection verification is UNKNOWN",
+      "status": "GOVERNANCE_CONSTRAINT_REPORTED",
+      "authorization": "NOT AUTHORIZED"
+    },
+    {
+      "id": "DEC-003",
+      "decision": "Leave #35/#31/#30/#20 open absent valid completion evidence",
+      "status": "GOVERNANCE_CONSTRAINT_REPORTED",
+      "authorization": "NOT AUTHORIZED_TO_CLOSE"
+    },
+    {
+      "id": "DEC-004",
+      "decision": "Do not act on #29/#28/#27, PR #8, or T1 artifacts under scoped directive",
+      "status": "GOVERNANCE_CONSTRAINT_REPORTED",
+      "authorization": "NOT AUTHORIZED"
+    },
+    {
+      "id": "DEC-005",
+      "decision": "External vector-store ingestion has not occurred",
+      "status": "VERIFIED_NO_ACTION_IN_THIS_TASK",
+      "authorization": "NOT PERFORMED"
+    },
+    {
+      "id": "DEC-006",
+      "decision": "Create rag/conversation-corpus-2026-11-05 from main",
+      "status": "EXECUTED_VERIFIED",
+      "authorization": "USER_AUTHORIZED_CORPUS_BUILD"
+    }
+  ]
+}
