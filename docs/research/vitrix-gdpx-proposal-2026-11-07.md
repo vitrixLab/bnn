@@ -309,7 +309,7 @@ Counting convention: one row per distinct factual claim/check in the Phase 1 aud
 | UNVERIFIABLE | 1 |
 | REJECTED-SOURCE classes | 8 |
 
-**Interpretation:** The 21 factual claims/checks comprise 15 verified, five reported-only, and one unverifiable. Eight source classes/items are rejected for primary factual support. The System 3-A bibliography's unverified and recalled entries are separately enumerated above and are not included in these GDPx/GDPval claim counts.
+**Interpretation:** The 21 factual claims/checks comprise 14 verified, six reported-only, and one unverifiable. The six reported-only rows are launch date, partner count, task count, eight-hour limit, exact pass@1/three-attempt headline definition, and native-harness policy. Eight source classes/items are rejected for primary factual support. The System 3-A bibliography's unverified and recalled entries are separately enumerated above and are not included in these GDPx/GDPval claim counts.
 
 ### Key unresolved items
 
