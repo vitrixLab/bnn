@@ -56,21 +56,20 @@
 // 1.  Hyper-parameters (match AI.png exactly)
 // ─────────────────────────────────────────────────────────────────────────────
 struct Config {
-    int vocab_size = 65;   // character vocabulary
-    int block_size = 55;   // context window (token sequence length)
-    int n_embd     = 16;   // embedding dimension
-    int n_head     = 4;    // attention heads
-    int n_layer    = 4;    // transformer blocks
+    int vocab_size = 256;  // character vocabulary (full byte range)
+    int block_size = 128;  // context window (token sequence length)
+    int n_embd     = 128;  // embedding dimension
+    int n_head     = 8;    // attention heads (d_k = 16 per head)
+    int n_layer    = 6;    // transformer blocks
     // derived
-    int d_k() const { return n_embd / n_head; } // 4 per head
+    int d_k() const { return n_embd / n_head; } // 16 per head
 
-    // Total params = 14208
-    // = 4 * (4*16*16 + 16*64 + 64*16)  [blocks]
-    // +  65*16   [wte]
-    // +  55*16   [wpe]
+    // Total params ≈ 1,228,800 (~1.2M)
+    // = n_layer * (4*n_embd*n_embd + 2*(4*n_embd)*n_embd)  [blocks]
+    // +  vocab_size * n_embd                                [wte]
+    // +  block_size * n_embd                                [wpe]
     // lm_head is weight-tied to wte (same storage, counted once)
-    // ─ Trainable matrices = 27:
-    //   24 (4 blocks × 6 projections) + wte + wpe + lm_head = 27
+    // ─ Trainable matrices = 6*n_layer + 2 (+lm_head tied)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -766,22 +765,61 @@ struct Adam {
         }
     }
 
-    void update_all(ModelWeights& W) {
+    void update_all(ModelWeights& W, float max_grad_norm = 1.0f, float max_weight = 10.0f) {
         ++step;
         int E = W.cfg.n_embd, V = W.cfg.vocab_size, T = W.cfg.block_size;
+
+        // ── Gradient clipping: compute global L2 norm across all grads ──
+        float grad_norm_sq = 0.0f;
+        auto accumulate = [&](const std::vector<float>& g) {
+            for (float x : g) grad_norm_sq += x * x;
+        };
+        accumulate(W.dwte);
+        accumulate(W.dwpe);
+        for (auto& b : W.blocks) {
+            accumulate(b.attn.dwq); accumulate(b.attn.dwk); accumulate(b.attn.dwv);
+            accumulate(b.attn.dwo);
+            accumulate(b.mlp.dfc1); accumulate(b.mlp.dfc2);
+        }
+        float grad_norm = std::sqrt(grad_norm_sq);
+        float clip_coef = (grad_norm > max_grad_norm) ? max_grad_norm / (grad_norm + 1e-6f) : 1.0f;
+        auto scale = [&](std::vector<float>& g) {
+            for (float& x : g) x *= clip_coef;
+        };
+        scale(W.dwte); scale(W.dwpe);
+        for (auto& b : W.blocks) {
+            scale(b.attn.dwq); scale(b.attn.dwk); scale(b.attn.dwv); scale(b.attn.dwo);
+            scale(b.mlp.dfc1); scale(b.mlp.dfc2);
+        }
+
+        auto clip_weights = [&](std::vector<float>& w) {
+            for (float& x : w) {
+                if (x > max_weight) x = max_weight;
+                if (x < -max_weight) x = -max_weight;
+            }
+        };
+
         update(W.wte.data(), W.dwte.data(), W.mwte.data(), W.vwte.data(), V*E);
+        clip_weights(W.wte);
         update(W.wpe.data(), W.dwpe.data(), W.mwpe.data(), W.vwpe.data(), T*E);
+        clip_weights(W.wpe);
         for (auto& b : W.blocks) {
             auto& a  = b.attn;
             auto& m  = b.mlp;
             int  sz  = E*E;
             int  szf = 4*E*E;
             update(a.wq.data(), a.dwq.data(), a.mwq.data(), a.vwq.data(), sz);
+            clip_weights(a.wq);
             update(a.wk.data(), a.dwk.data(), a.mwk.data(), a.vwk.data(), sz);
+            clip_weights(a.wk);
             update(a.wv.data(), a.dwv.data(), a.mwv.data(), a.vwv.data(), sz);
+            clip_weights(a.wv);
             update(a.wo.data(), a.dwo.data(), a.mwo.data(), a.vwo.data(), sz);
+            clip_weights(a.wo);
             update(m.fc1.data(), m.dfc1.data(), m.mfc1.data(), m.vfc1.data(), szf);
+            clip_weights(m.fc1);
             update(m.fc2.data(), m.dfc2.data(), m.mfc2.data(), m.vfc2.data(), szf);
+            clip_weights(m.fc2);
         }
     }
 };
@@ -1051,7 +1089,11 @@ static bool train(
     const std::string& model_path = "model.bin",
     int   max_iters   = 5000,
     int   eval_every  = 100,
-    float lr          = 3e-3f)
+    float lr          = 3e-3f,
+    int   n_embd      = 128,
+    int   n_head      = 8,
+    int   n_layer     = 6,
+    int   block_size  = 128)
 {
     std::ifstream f(data_path);
     if (!f) { std::fprintf(stderr, "Cannot open %s\n", data_path.c_str()); return false; }
@@ -1066,9 +1108,14 @@ static bool train(
 
     Config cfg;
     cfg.vocab_size = tok.vocab_size();
+    cfg.n_embd     = n_embd;
+    cfg.n_head     = n_head;
+    cfg.n_layer    = n_layer;
+    cfg.block_size = block_size;
     ModelWeights W;
     W.init(cfg);
-    std::printf("[model] parameters = %d\n", W.count_params());
+    std::printf("[model] parameters = %d (~%.2fM)\n", W.count_params(),
+                W.count_params() / 1e6f);
 
     Adam opt;
     opt.lr = lr;
@@ -1087,7 +1134,29 @@ static bool train(
         int start_pos = pos_dist(data_rng);
         std::vector<int> seq(data.begin() + start_pos, data.begin() + start_pos + T + 1);
         float loss = forward(cfg, W, seq, cache, true);
+        if (!std::isfinite(loss)) {
+            std::fprintf(stderr, "NaN loss at iter %d\n", iter + 1);
+            return false;
+        }
         backward(cfg, W, seq, cache);
+        bool grad_nan = false;
+        auto check_grad = [&](const std::vector<float>& g, const char* name) {
+            for (float x : g) {
+                if (!std::isfinite(x)) { grad_nan = true; std::fprintf(stderr, "NaN in %s at iter %d\n", name, iter + 1); return; }
+            }
+        };
+        check_grad(W.dwte, "dwte");
+        check_grad(W.dwpe, "dwpe");
+        for (auto& b : W.blocks) {
+            check_grad(b.attn.dwq, "dwq");
+            check_grad(b.attn.dwk, "dwk");
+            check_grad(b.attn.dwv, "dwv");
+            check_grad(b.attn.dwo, "dwo");
+            check_grad(b.mlp.dfc1, "dfc1");
+            check_grad(b.mlp.dfc2, "dfc2");
+            if (grad_nan) break;
+        }
+        if (grad_nan) return false;
         opt.update_all(W);
         if ((iter + 1) % eval_every == 0) {
             std::printf("[iter %5d] loss = %.4f\n", iter + 1, loss);
@@ -1106,7 +1175,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::printf(
             "Usage:\n"
-            "  %s train <data.txt> [model.bin] [iters] [lr]\n"
+            "  %s train <data.txt> [model.bin] [iters] [lr] [n_embd] [n_head] [n_layer] [block_size]\n"
             "  %s gen   <model.bin> <vocab.bin> \"<seed>\"\n",
             argv[0], argv[0]);
         return 1;
@@ -1120,7 +1189,11 @@ int main(int argc, char* argv[]) {
         std::string model_path = (argc > 3) ? argv[3] : "model.bin";
         int   iters = (argc > 4) ? std::stoi(argv[4]) : 5000;
         float lr    = (argc > 5) ? std::stof(argv[5]) : 3e-3f;
-        if (!train(data_path, model_path, iters, 100, lr)) return 1;
+        int   n_embd  = (argc > 6) ? std::stoi(argv[6]) : 128;
+        int   n_head  = (argc > 7) ? std::stoi(argv[7]) : 8;
+        int   n_layer = (argc > 8) ? std::stoi(argv[8]) : 6;
+        int   block_size = (argc > 9) ? std::stoi(argv[9]) : 128;
+        if (!train(data_path, model_path, iters, 100, lr, n_embd, n_head, n_layer, block_size)) return 1;
 
     } else if (mode == "gen") {
         if (argc < 5) { std::fprintf(stderr, "gen: need <model.bin> <vocab.bin> \"<seed>\"\n"); return 1; }
