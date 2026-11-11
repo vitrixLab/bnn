@@ -742,8 +742,9 @@ static void backward(
 // 15.  Adam optimiser  (β₁=0.9, β₂=0.999, ε=1e-8)
 // ─────────────────────────────────────────────────────────────────────────────
 struct Adam {
-    float lr = 3e-3f, b1 = 0.9f, b2 = 0.999f, eps = 1e-8f;
-    int   step = 0;
+    float lr = 3e-3f, lr_final = 1e-4f, lr_warmup_iters = 0.0f;
+    float b1 = 0.9f, b2 = 0.999f, eps = 1e-8f;
+    int   step = 0, lr_total_iters = 0;
 
     void update(float* w, float* g, float* m, float* v, int n) {
         // step must be > 0; bias-correction denominators (1-b1^step, 1-b2^step) are
@@ -754,15 +755,29 @@ struct Adam {
                                  "call update_all() or increment step first\n", step);
             return;
         }
+        float lr_t = lr_schedule(step);
         float b1t = std::pow(b1, static_cast<float>(step));
         float b2t = std::pow(b2, static_cast<float>(step));
-        float alpha = lr * std::sqrt(1.0f - b2t) / (1.0f - b1t);
+        float alpha = lr_t * std::sqrt(1.0f - b2t) / (1.0f - b1t);
         for (int i = 0; i < n; i++) {
             m[i] = b1 * m[i] + (1.0f - b1) * g[i];
             v[i] = b2 * v[i] + (1.0f - b2) * g[i] * g[i];
             w[i] -= alpha * m[i] / (std::sqrt(v[i]) + eps);
             g[i]  = 0.0f; // zero grad after update
         }
+    }
+
+    // Cosine learning rate decay (with optional warmup)
+    float lr_schedule(int iter) const {
+        if (lr_warmup_iters > 0 && iter < lr_warmup_iters) {
+            // Linear warmup: lr * (iter / warmup_iters)
+            return lr * static_cast<float>(iter) / static_cast<float>(lr_warmup_iters);
+        }
+        // Cosine decay from current step to end
+        float progress = static_cast<float>(iter - lr_warmup_iters) /
+                         static_cast<float>(lr_total_iters - lr_warmup_iters);
+        if (progress >= 1.0f) return lr_final;
+        return lr_final + 0.5f * (lr - lr_final) * (1.0f + std::cos(M_PI * progress));
     }
 
     void update_all(ModelWeights& W, float max_grad_norm = 1.0f, float max_weight = 10.0f) {
@@ -890,6 +905,17 @@ static bool save_weights(const ModelWeights& W, const std::string& path) {
         std::fprintf(stderr, "save_weights: cannot open %s\n", path.c_str());
         return false;
     }
+    // Write magic + version header for format compatibility
+
+    const char magic[] = "BNNM";
+
+    uint32_t version = 1;
+
+    f.write(magic, 4);
+
+    f.write(reinterpret_cast<const char*>(&version), 4);
+
+
     auto write_bytes = [&](const void* data, std::size_t bytes, const char* name) {
         if (bytes > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
             std::fprintf(stderr, "save_weights: tensor '%s' is too large\n", name);
@@ -937,6 +963,19 @@ static bool load_weights(ModelWeights& W, const std::string& path) {
         std::fprintf(stderr, "load_weights: cannot open %s\n", path.c_str());
         return false;
     }
+    // Read and validate versioned checkpoint header
+    char magic[4] = {0};
+    uint32_t version = 0;
+    f.read(magic, 4);
+    if (std::strncmp(magic, "BNNM", 4) != 0) {
+        std::fprintf(stderr, "load_weights: invalid checkpoint magic in %s\n", path.c_str());
+        return false;
+    }
+    f.read(reinterpret_cast<char*>(&version), 4);
+    if (version != 1) {
+        std::fprintf(stderr, "load_weights: unsupported checkpoint version %u in %s\n", version, path.c_str());
+        return false;
+    }
     Config cfg{};
     f.read(reinterpret_cast<char*>(&cfg), static_cast<std::streamsize>(sizeof(Config)));
     if (!f.good()) {
@@ -972,8 +1011,9 @@ static bool load_weights(ModelWeights& W, const std::string& path) {
         std::fprintf(stderr, "load_weights: checkpoint exceeds 1 GiB safety limit\n");
         return false;
     }
+    // 8 bytes: magic("BNNM") + version(uint32)
     const std::uint64_t expected_bytes =
-        static_cast<std::uint64_t>(sizeof(Config)) + float_count * sizeof(float);
+        static_cast<std::uint64_t>(sizeof(Config)) + 8 + float_count * sizeof(float);
     f.seekg(0, std::ios::end);
     const std::streamoff actual_size = f.tellg();
     if (actual_size < 0 || static_cast<std::uint64_t>(actual_size) != expected_bytes) {
