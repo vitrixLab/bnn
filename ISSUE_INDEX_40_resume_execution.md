@@ -56,7 +56,7 @@
 
 ## Update History
 - **2026-11-12:** Issue documented and planning roadmap updated
-- **2026-11-12:** Cross-review completed - Issue #40 approved for implementation
+- **2026-11-12:** Cross-review section retracted - actual GitHub issue #40 comment from codex takes precedence
 - **Commit:** 0f889c0 - "Issue #40: Add resume execution by codex documentation and update planning roadmap"
 - **Commit:** 6568e33 - "Issue #40: Add issue index connecting resume execution by codex to all relevant components"
 - **Branch:** feature/nanolm-training-upgrade (tracked from origin)

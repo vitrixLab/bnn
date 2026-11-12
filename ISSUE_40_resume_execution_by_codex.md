@@ -32,4 +32,4 @@ This issue tracks the implementation of resuming execution workflows using codex
 - Planning doc: `HYPERION_TO_GPT1_PLAN.md` - Issue #40 tracking reference
 
 ## Comments
-*(Add comment here)*
+*(Retracted - actual GitHub issue #40 comment from codex takes precedence)*
