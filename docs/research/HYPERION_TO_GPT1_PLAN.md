@@ -296,6 +296,7 @@ model.save_pretrained("./gpt1_117m_final")
 - [ ] Document final recommendations: nanoLM vs. production frameworks
 - [ ] Create data preparation scripts for 7MB+ GPT-1 dataset
 - [ ] Update issue #40 with new scaling information
+- [ ] Implement resume execution by codex (Issue #40) - leverage binary skill #44 `resume-codex` and integrate with checkpoint versioning and sandbox execution gate v3
 
 ---
 ## 📚 Quick Reference: Key Formulas
