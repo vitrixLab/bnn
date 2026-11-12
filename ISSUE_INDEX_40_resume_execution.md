@@ -47,6 +47,13 @@
 - [x] Issue documentation created (`ISSUE_40_resume_execution_by_codex.md`)
 - [x] Planning roadmap updated (`HYPERION_TO_GPT1_PLAN.md`)
 - [x] Git commit and push to `feature/nanolm-training-upgrade`
+- [ ] **Apply Claude cross-review findings (Issue #40 comment 6828090894):**
+   - [ ] Resolve parameter count from actual allocated trainable tensors (~810K vs ~1.2M)
+   - [ ] Trace context defaults/train/generation paths (128 config vs 64 CLI example)
+   - [ ] Update data-size heuristic documentation (unvalidated; 810K×60=48.6 MB not ~5 MB)
+   - [ ] Clarify GPT-1 likeness: resume/checkpoint is tooling/infrastructure, not direct likeness axis
+   - [ ] Define deterministic replay: fresh uninterrupted seeded run, not weights-only restart
+   - [ ] Link existing loss trace and logging definition; do not invent unit or discard local results
 - [ ] Implement codex API integration for state restoration
 - [ ] Integrate with binary skill `#44` `resume-codex`
 - [ ] Connect with checkpoint versioning system

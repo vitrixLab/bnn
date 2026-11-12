@@ -297,21 +297,41 @@ model.save_pretrained("./gpt1_117m_final")
 - [ ] Create data preparation scripts for 7MB+ GPT-1 dataset
 - [ ] Update issue #40 with new scaling information
 - [ ] Implement resume execution by codex (Issue #40) - leverage binary skill #44 `resume-codex` and integrate with checkpoint versioning and sandbox execution gate v3
+- [ ] **Apply Claude cross-review findings (Issue #40 comment 6828090894):**
+   - [ ] Resolve parameter count from actual allocated trainable tensors (~810K vs ~1.2M)
+   - [ ] Trace context defaults/train/generation paths (128 config vs 64 CLI example)
+   - [ ] Update data-size heuristic documentation (unvalidated; 810K×60=48.6 MB not ~5 MB; do not describe as minimum-data law)
+   - [ ] Clarify GPT-1 likeness: resume/checkpoint is tooling/infrastructure, not direct likeness axis
+   - [ ] Define deterministic replay: fresh uninterrupted seeded run, not weights-only restart
+   - [ ] Link existing loss trace and logging definition; do not invent unit or discard local results
 
 ---
 ## 📚 Quick Reference: Key Formulas
 
 ### Parameter Count
+- **Claimed:** ~810,784 parameters (from `2bacd4c` implementation)
+- **Formula-derived:** ~1,228,800 (simplified formula: `n_layer × (4×n_embd² + 2×(4×n_embd)×n_embd) + vocab_size×n_embd + block_size×n_embd`)
+- **Open issue:** Resolution from actual allocated trainable tensors required (per Issue #40 comment 6828090894)
+- **Allocation components to account for:**
+  - Attention and feed-forward projections
+  - Biases and normalization parameters
+  - Token and positional embeddings
+  - Tied vs untied output/head weights
+- **Do not accept:** prose parameter estimate as allocation count
+- **Required:** derive from actual allocated tensors at inspected SHA
 ```
 params = n_layer × (4×n_embd² + 2×(4×n_embd)×n_embd) 
        + vocab_size × n_embd 
        + block_size × n_embd
 ```
 
-### Data Requirement
-```
-required_data_bytes = target_params × 60
-```
+### Data Requirement ⚠️
+- **Heuristic:** `required_data_bytes = target_params × 60`
+- **Important:** This is an **unvalidated heuristic** per Issue #40 comment 6828090894
+- **Do not describe as:** minimum-data law or invariant
+- **Correct arithmetic:** 810,000 × 60 = 48.6 MB decimal, not ~5 MB
+- **Do not use to:** infer model quality or establish scaling law
+- **Required next evidence:** Reproducible multi-scale experiments establishing domain, assumptions, and limitations
 
 ### Learning Rate Schedule
 ```
