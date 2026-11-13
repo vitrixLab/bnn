@@ -19,7 +19,7 @@ run_logged CMAKE_CONFIGURE cmake -S "$ROOT/src" -B "$BUILD_DIR"
 run_logged CMAKE_BUILD cmake --build "$BUILD_DIR"
 run_logged HARNESS_COMPILE g++ -std=c++17 -Wall -Wextra -Werror -I "$ROOT/src" \
   "$ROOT/test-bundle/tests/nanolm_sandbox_tests.cpp" -o "$BIN"
-tests=(attention_head_cache_and_gradient next_token_full_window_reference parameter_count_matches_allocations checkpoint_rejects_before_allocation cli_training_and_save_failures isolated_deterministic_replay)
+tests=(attention_head_cache_and_gradient next_token_full_window_reference parameter_count_matches_allocations checkpoint_rejects_before_allocation cli_training_and_save_failures isolated_deterministic_replay training_state_round_trip_exact training_state_rejects_invalid_and_preserves_live_state resumed_training_matches_uninterrupted cli_resume_paths)
 for test_name in "${tests[@]}"; do
   if [[ "${BNN_NETWORK_ISOLATED:-0}" == "1" ]]; then
     run_logged "TEST_$test_name" "$BIN" --test "$test_name"
@@ -31,4 +31,4 @@ for test_name in "${tests[@]}"; do
     run_logged "TEST_$test_name" unshare -n -- "$BIN" --test "$test_name"
   fi
 done
-echo "SUMMARY: all 6 NanoLM sandbox tests passed"
+echo "SUMMARY: all 10 NanoLM sandbox tests passed"

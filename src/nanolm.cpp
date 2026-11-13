@@ -957,6 +957,359 @@ static bool save_weights(const ModelWeights& W, const std::string& path) {
     return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 17b. Training state save / load — versioned "BNNS" format v1
+// ─────────────────────────────────────────────────────────────────────────────
+// Self-describing training-state checkpoint (native byte order). Layout:
+//   [0..3]    magic "BNNS"
+//   [4..7]    format version = 1 (uint32)
+//   [8..]     Config (sizeof(Config) bytes)
+//   +0        Adam step (int32)
+//   +4        Adam lr              (float)
+//   +8        Adam lr_final        (float)
+//   +12       Adam lr_warmup_iters (float)
+//   +16       Adam lr_total_iters  (int32)
+//   +20       Adam b1  (float)
+//   +24       Adam b2  (float)
+//   +28       Adam eps (float)
+//   +32       mt19937 state text length (uint32)
+//   ...       mt19937 state text (standard <random> textual form; exact
+//             round-trip via operator<< / operator>>)
+//   ...       corpus token count at save time (uint64) — defines the batch
+//             sampler range; resume must verify it matches the live corpus
+//   ...       Adam moment tensors, fixed order:
+//               mwte, vwte, mwpe, vwpe,
+//               per block: mwq, vwq, mwk, vwk, mwv, vwv, mwo, vwo,
+//                          mfc1, vfc1, mfc2, vfc2
+// load_training_state() enforces exact-size equality (rejecting truncated
+// payloads and trailing bytes), validates the versioned header and the
+// stored Config against the live model, and is transactional: live model /
+// optimizer / RNG state is mutated only after every field has been read and
+// validated successfully. Compatibility: version 1 only.
+//
+// Scope: this is optimizer + data-sampler state for interrupted-training
+// resume. The global init/generation RNG (std::mt19937 rng(42)) is NOT part
+// of the training state — it seeds initialisation and generation sampling
+// only, and is irrelevant once weights are loaded from a checkpoint.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// mt19937 round-trips through its standard-defined textual representation.
+static std::string mt19937_serialize(const std::mt19937& engine) {
+    std::ostringstream os;
+    os << engine;
+    return os.str();
+}
+
+static bool mt19937_deserialize(const std::string& text, std::mt19937& engine) {
+    std::istringstream is(text);
+    is >> engine;
+    return !is.fail();
+}
+
+static bool save_training_state(const ModelWeights& W, const Adam& opt,
+                                const std::mt19937& data_rng,
+                                std::uint64_t data_token_count,
+                                const std::string& path) {
+    const std::string rng_text = mt19937_serialize(data_rng);
+    if (rng_text.empty() || rng_text.size() > 624u * 12u) {
+        std::fprintf(stderr, "save_training_state: unexpected mt19937 state text length (%zu)\n",
+                     rng_text.size());
+        return false;
+    }
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) {
+        std::fprintf(stderr, "save_training_state: cannot open %s\n", path.c_str());
+        return false;
+    }
+
+    const char magic[4] = { 'B', 'N', 'N', 'S' };
+    const std::uint32_t version = 1;
+    const std::int32_t step32 = static_cast<std::int32_t>(opt.step);
+    const std::int32_t total32 = static_cast<std::int32_t>(opt.lr_total_iters);
+    const std::uint32_t rng_len = static_cast<std::uint32_t>(rng_text.size());
+
+    auto write_bytes = [&](const void* data, std::size_t bytes, const char* what) {
+        if (bytes > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            std::fprintf(stderr, "save_training_state: field '%s' is too large\n", what);
+            return false;
+        }
+        f.write(static_cast<const char*>(data), static_cast<std::streamsize>(bytes));
+        if (!f.good()) {
+            std::fprintf(stderr, "save_training_state: failed writing '%s' to %s\n", what, path.c_str());
+            return false;
+        }
+        return true;
+    };
+    auto write_tensor = [&](const std::vector<float>& values, const char* name) {
+        return write_bytes(values.data(), values.size() * sizeof(float), name);
+    };
+
+    bool ok =
+        write_bytes(magic, 4, "magic") &&
+        write_bytes(&version, 4, "version") &&
+        write_bytes(&W.cfg, sizeof(Config), "config") &&
+        write_bytes(&step32, 4, "adam step") &&
+        write_bytes(&opt.lr, 4, "adam lr") &&
+        write_bytes(&opt.lr_final, 4, "adam lr_final") &&
+        write_bytes(&opt.lr_warmup_iters, 4, "adam lr_warmup_iters") &&
+        write_bytes(&total32, 4, "adam lr_total_iters") &&
+        write_bytes(&opt.b1, 4, "adam b1") &&
+        write_bytes(&opt.b2, 4, "adam b2") &&
+        write_bytes(&opt.eps, 4, "adam eps") &&
+        write_bytes(&rng_len, 4, "rng length") &&
+        write_bytes(rng_text.data(), rng_text.size(), "rng state") &&
+        write_bytes(&data_token_count, 8, "token count") &&
+        write_tensor(W.mwte, "mwte") &&
+        write_tensor(W.vwte, "vwte") &&
+        write_tensor(W.mwpe, "mwpe") &&
+        write_tensor(W.vwpe, "vwpe");
+    for (std::size_t bi = 0; ok && bi < W.blocks.size(); ++bi) {
+        const auto& b = W.blocks[bi];
+        const std::string prefix = "block " + std::to_string(bi) + " ";
+        ok = write_tensor(b.attn.mwq, (prefix + "mwq").c_str()) &&
+             write_tensor(b.attn.vwq, (prefix + "vwq").c_str()) &&
+             write_tensor(b.attn.mwk, (prefix + "mwk").c_str()) &&
+             write_tensor(b.attn.vwk, (prefix + "vwk").c_str()) &&
+             write_tensor(b.attn.mwv, (prefix + "mwv").c_str()) &&
+             write_tensor(b.attn.vwv, (prefix + "vwv").c_str()) &&
+             write_tensor(b.attn.mwo, (prefix + "mwo").c_str()) &&
+             write_tensor(b.attn.vwo, (prefix + "vwo").c_str()) &&
+             write_tensor(b.mlp.mfc1, (prefix + "mfc1").c_str()) &&
+             write_tensor(b.mlp.vfc1, (prefix + "vfc1").c_str()) &&
+             write_tensor(b.mlp.mfc2, (prefix + "mfc2").c_str()) &&
+             write_tensor(b.mlp.vfc2, (prefix + "vfc2").c_str());
+    }
+    if (!ok) return false;
+    f.flush();
+    if (!f.good()) {
+        std::fprintf(stderr, "save_training_state: flush failed for %s\n", path.c_str());
+        return false;
+    }
+    f.close();
+    if (f.fail()) {
+        std::fprintf(stderr, "save_training_state: close failed for %s\n", path.c_str());
+        return false;
+    }
+    std::printf("[save] wrote training state to %s\n", path.c_str());
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17c. Training state load — validates header/configuration/exact size, reads
+//      transactionally into candidates, commits only on full success.
+// ─────────────────────────────────────────────────────────────────────────────
+static bool config_equal(const Config& a, const Config& b) {
+    return a.vocab_size == b.vocab_size && a.block_size == b.block_size &&
+           a.n_embd == b.n_embd && a.n_head == b.n_head && a.n_layer == b.n_layer;
+}
+
+static bool load_training_state(ModelWeights& W, Adam& opt,
+                                std::mt19937& data_rng,
+                                std::uint64_t& data_token_count,
+                                const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        std::fprintf(stderr, "load_training_state: cannot open %s\n", path.c_str());
+        return false;
+    }
+
+    auto read_bytes = [&](void* dst, std::size_t bytes, const char* what) {
+        if (bytes > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            std::fprintf(stderr, "load_training_state: field '%s' is too large in %s\n", what, path.c_str());
+            return false;
+        }
+        f.read(static_cast<char*>(dst), static_cast<std::streamsize>(bytes));
+        if (!f.good()) {
+            std::fprintf(stderr, "load_training_state: failed reading '%s' from %s\n", what, path.c_str());
+            return false;
+        }
+        return true;
+    };
+
+    char magic[4] = {0};
+    if (!read_bytes(magic, 4, "magic")) return false;
+    if (std::strncmp(magic, "BNNS", 4) != 0) {
+        std::fprintf(stderr, "load_training_state: invalid training-state magic in %s\n", path.c_str());
+        return false;
+    }
+    std::uint32_t version = 0;
+    if (!read_bytes(&version, 4, "version")) return false;
+    if (version != 1) {
+        std::fprintf(stderr, "load_training_state: unsupported training-state version %u in %s\n",
+                     static_cast<unsigned>(version), path.c_str());
+        return false;
+    }
+    Config state_cfg{};
+    if (!read_bytes(&state_cfg, sizeof(Config), "config")) return false;
+    if (state_cfg.vocab_size <= 0 || state_cfg.block_size <= 0 || state_cfg.n_embd <= 0 ||
+        state_cfg.n_head <= 0 || state_cfg.n_layer <= 0 || state_cfg.n_embd % state_cfg.n_head != 0 ||
+        state_cfg.n_head > state_cfg.n_embd || state_cfg.vocab_size > 1000000 ||
+        state_cfg.block_size > 65536 || state_cfg.n_embd > 4096 || state_cfg.n_layer > 1024) {
+        std::fprintf(stderr, "load_training_state: invalid or unsupported configuration in %s\n", path.c_str());
+        return false;
+    }
+    if (!config_equal(state_cfg, W.cfg)) {
+        std::fprintf(stderr, "load_training_state: configuration mismatch in %s "
+                             "(state V=%d T=%d E=%d H=%d L=%d; live V=%d T=%d E=%d H=%d L=%d)\n",
+                     path.c_str(),
+                     state_cfg.vocab_size, state_cfg.block_size, state_cfg.n_embd,
+                     state_cfg.n_head, state_cfg.n_layer,
+                     W.cfg.vocab_size, W.cfg.block_size, W.cfg.n_embd,
+                     W.cfg.n_head, W.cfg.n_layer);
+        return false;
+    }
+
+    // Transactional read of the fixed scalar section (Adam fields) that sits
+    // between the Config header and the variable-length RNG text.
+    Adam cand_opt;
+    {
+        std::int32_t step32 = 0, total32 = 0;
+        if (!read_bytes(&step32, 4, "adam step") ||
+            !read_bytes(&cand_opt.lr, 4, "adam lr") ||
+            !read_bytes(&cand_opt.lr_final, 4, "adam lr_final") ||
+            !read_bytes(&cand_opt.lr_warmup_iters, 4, "adam lr_warmup_iters") ||
+            !read_bytes(&total32, 4, "adam lr_total_iters") ||
+            !read_bytes(&cand_opt.b1, 4, "adam b1") ||
+            !read_bytes(&cand_opt.b2, 4, "adam b2") ||
+            !read_bytes(&cand_opt.eps, 4, "adam eps")) return false;
+        cand_opt.step = static_cast<int>(step32);
+        cand_opt.lr_total_iters = static_cast<int>(total32);
+        if (step32 < 0 || total32 < 0 ||
+            !std::isfinite(cand_opt.lr) || cand_opt.lr < 0.0f ||
+            !std::isfinite(cand_opt.lr_final) || cand_opt.lr_final < 0.0f ||
+            !std::isfinite(cand_opt.lr_warmup_iters) || cand_opt.lr_warmup_iters < 0.0f ||
+            !(cand_opt.b1 > 0.0f && cand_opt.b1 < 1.0f) ||
+            !(cand_opt.b2 > 0.0f && cand_opt.b2 < 1.0f) ||
+            !(cand_opt.eps > 0.0f && std::isfinite(cand_opt.eps))) {
+            std::fprintf(stderr, "load_training_state: implausible Adam hyperparameters in %s\n", path.c_str());
+            return false;
+        }
+    }
+
+    std::uint32_t rng_len = 0;
+    if (!read_bytes(&rng_len, 4, "rng length")) return false;
+    if (rng_len == 0 || rng_len > 624u * 12u) {
+        std::fprintf(stderr, "load_training_state: implausible mt19937 state length %u in %s\n",
+                     static_cast<unsigned>(rng_len), path.c_str());
+        return false;
+    }
+
+    // Exact-size expectation from the stored Config: reject truncated payloads
+    // and trailing bytes alike, before allocating anything.
+    const std::uint64_t E = static_cast<std::uint64_t>(state_cfg.n_embd);
+    const std::uint64_t V = static_cast<std::uint64_t>(state_cfg.vocab_size);
+    const std::uint64_t T = static_cast<std::uint64_t>(state_cfg.block_size);
+    const std::uint64_t L = static_cast<std::uint64_t>(state_cfg.n_layer);
+    std::uint64_t moment_floats = 0;
+    auto add_product = [&](std::uint64_t a, std::uint64_t b) {
+        const std::uint64_t max_value = std::numeric_limits<std::uint64_t>::max();
+        if (a != 0 && b > (max_value - moment_floats) / a) return false;
+        moment_floats += a * b;
+        return true;
+    };
+    if (!add_product(V, E) || !add_product(V, E) ||   // mwte, vwte
+        !add_product(T, E) || !add_product(T, E) ||   // mwpe, vwpe
+        !add_product(L, 24ULL * E * E)) {             // 8 attention (E²) + 4 MLP (4E²) moments per block
+        std::fprintf(stderr, "load_training_state: checkpoint dimensions overflow\n");
+        return false;
+    }
+    const std::uint64_t fixed_bytes = 44ULL + sizeof(Config) + 8ULL; // header + Adam fields + rng_len + token count
+    const std::uint64_t max_file_bytes = 4ULL * 1024ULL * 1024ULL * 1024ULL;
+    if (moment_floats > (max_file_bytes - fixed_bytes - rng_len) / 4ULL) {
+        std::fprintf(stderr, "load_training_state: training state exceeds 4 GiB safety limit\n");
+        return false;
+    }
+    const std::uint64_t expected_bytes = fixed_bytes + rng_len + moment_floats * 4ULL;
+    f.seekg(0, std::ios::end);
+    const std::streamoff actual_size = f.tellg();
+    if (actual_size < 0 || static_cast<std::uint64_t>(actual_size) != expected_bytes) {
+        std::fprintf(stderr, "load_training_state: size mismatch for %s (expected %llu bytes, got %lld)\n",
+                     path.c_str(), static_cast<unsigned long long>(expected_bytes),
+                     static_cast<long long>(actual_size));
+        return false;
+    }
+    // Rewind to the start of the RNG text (magic + version + config + Adam
+    // fields + rng length have already been consumed; seekg(end) moved us).
+    f.seekg(static_cast<std::streamoff>(44 + sizeof(Config)), std::ios::beg);
+    if (!f.good()) {
+        std::fprintf(stderr, "load_training_state: cannot seek to payload in %s\n", path.c_str());
+        return false;
+    }
+
+    std::mt19937 cand_rng;
+    std::uint64_t cand_tokens = 0;
+    {
+        std::string rng_text(rng_len, '\0');
+        if (!read_bytes(&rng_text[0], rng_len, "rng state")) return false;
+        if (!read_bytes(&cand_tokens, 8, "token count")) return false;
+        if (!mt19937_deserialize(rng_text, cand_rng)) {
+            std::fprintf(stderr, "load_training_state: malformed mt19937 state in %s\n", path.c_str());
+            return false;
+        }
+    }
+
+    ModelWeights candidate;
+    candidate.init(state_cfg);
+    auto read_tensor = [&](std::vector<float>& values, const char* name) {
+        const std::size_t bytes = values.size() * sizeof(float);
+        if (bytes > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            std::fprintf(stderr, "load_training_state: tensor '%s' is too large\n", name);
+            return false;
+        }
+        f.read(reinterpret_cast<char*>(values.data()), static_cast<std::streamsize>(bytes));
+        if (!f.good()) {
+            std::fprintf(stderr, "load_training_state: failed reading tensor '%s' from %s\n", name, path.c_str());
+            return false;
+        }
+        return true;
+    };
+    if (!read_tensor(candidate.mwte, "mwte") || !read_tensor(candidate.vwte, "vwte") ||
+        !read_tensor(candidate.mwpe, "mwpe") || !read_tensor(candidate.vwpe, "vwpe")) return false;
+    for (std::size_t bi = 0; bi < candidate.blocks.size(); ++bi) {
+        auto& b = candidate.blocks[bi];
+        const std::string prefix = "block " + std::to_string(bi) + " ";
+        if (!read_tensor(b.attn.mwq, (prefix + "mwq").c_str()) ||
+            !read_tensor(b.attn.vwq, (prefix + "vwq").c_str()) ||
+            !read_tensor(b.attn.mwk, (prefix + "mwk").c_str()) ||
+            !read_tensor(b.attn.vwk, (prefix + "vwk").c_str()) ||
+            !read_tensor(b.attn.mwv, (prefix + "mwv").c_str()) ||
+            !read_tensor(b.attn.vwv, (prefix + "vwv").c_str()) ||
+            !read_tensor(b.attn.mwo, (prefix + "mwo").c_str()) ||
+            !read_tensor(b.attn.vwo, (prefix + "vwo").c_str()) ||
+            !read_tensor(b.mlp.mfc1, (prefix + "mfc1").c_str()) ||
+            !read_tensor(b.mlp.vfc1, (prefix + "vfc1").c_str()) ||
+            !read_tensor(b.mlp.mfc2, (prefix + "mfc2").c_str()) ||
+            !read_tensor(b.mlp.vfc2, (prefix + "vfc2").c_str())) return false;
+    }
+
+    // Commit: every field read and validated — now mutate live state.
+    W.mwte = std::move(candidate.mwte);
+    W.vwte = std::move(candidate.vwte);
+    W.mwpe = std::move(candidate.mwpe);
+    W.vwpe = std::move(candidate.vwpe);
+    for (std::size_t bi = 0; bi < W.blocks.size(); ++bi) {
+        auto& dst = W.blocks[bi];
+        auto& src = candidate.blocks[bi];
+        dst.attn.mwq = std::move(src.attn.mwq);
+        dst.attn.vwq = std::move(src.attn.vwq);
+        dst.attn.mwk = std::move(src.attn.mwk);
+        dst.attn.vwk = std::move(src.attn.vwk);
+        dst.attn.mwv = std::move(src.attn.mwv);
+        dst.attn.vwv = std::move(src.attn.vwv);
+        dst.attn.mwo = std::move(src.attn.mwo);
+        dst.attn.vwo = std::move(src.attn.vwo);
+        dst.mlp.mfc1 = std::move(src.mlp.mfc1);
+        dst.mlp.vfc1 = std::move(src.mlp.vfc1);
+        dst.mlp.mfc2 = std::move(src.mlp.mfc2);
+        dst.mlp.vfc2 = std::move(src.mlp.vfc2);
+    }
+    opt = cand_opt;
+    data_rng = std::move(cand_rng);
+    data_token_count = cand_tokens;
+    std::printf("[load] loaded training state from %s\n", path.c_str());
+    return true;
+}
+
 static bool load_weights(ModelWeights& W, const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f.is_open()) {
@@ -1021,7 +1374,11 @@ static bool load_weights(ModelWeights& W, const std::string& path) {
                      path.c_str(), static_cast<unsigned long long>(expected_bytes));
         return false;
     }
-    f.seekg(static_cast<std::streamoff>(sizeof(Config)), std::ios::beg);
+    // Payload starts after magic (4) + version (4) + Config. The historic
+    // seek to sizeof(Config) alone read every tensor 8 bytes early — corrupting
+    // all loaded weights — and was fixed after the interrupted-vs-uninterrupted
+    // equivalence test surfaced it (Issue #40, 2026-11-13).
+    f.seekg(static_cast<std::streamoff>(8 + sizeof(Config)), std::ios::beg);
     if (!f.good()) {
         std::fprintf(stderr, "load_weights: cannot seek to payload in %s\n", path.c_str());
         return false;
@@ -1133,7 +1490,9 @@ static bool train(
     int   n_embd      = 128,
     int   n_head      = 8,
     int   n_layer     = 6,
-    int   block_size  = 128)
+    int   block_size  = 128,
+    bool  resume_from_state = false,
+    int   total_iters_override = 0)
 {
     std::ifstream f(data_path);
     if (!f) { std::fprintf(stderr, "Cannot open %s\n", data_path.c_str()); return false; }
@@ -1154,13 +1513,44 @@ static bool train(
     cfg.block_size = block_size;
     ModelWeights W;
     W.init(cfg);
-    std::printf("[model] parameters = %d (~%.2fM)\n", W.count_params(),
-                W.count_params() / 1e6f);
 
     Adam opt;
     opt.lr = lr;
+    opt.lr_total_iters = total_iters_override > 0 ? total_iters_override : max_iters;
     ForwardCache cache;
     std::mt19937 data_rng(0);
+    const std::uint64_t corpus_tokens = static_cast<std::uint64_t>(data.size());
+
+    if (resume_from_state) {
+        // Weights load first: the checkpoint's Config becomes authoritative for
+        // the resumed run, and optimizer-state tensors are dimension-checked
+        // against it by load_training_state().
+        if (!load_weights(W, model_path)) {
+            std::fprintf(stderr, "resume: cannot load model weights from %s\n", model_path.c_str());
+            return false;
+        }
+        cfg = W.cfg;
+        const std::string state_path = model_path + ".state";
+        std::uint64_t stored_tokens = 0;
+        if (!load_training_state(W, opt, data_rng, stored_tokens, state_path)) {
+            std::fprintf(stderr, "resume: cannot load training state from %s\n", state_path.c_str());
+            return false;
+        }
+        if (stored_tokens != corpus_tokens) {
+            std::fprintf(stderr, "resume: training state was saved with a %llu-token corpus, but the live corpus has %llu tokens; refusing to resume with a different sampler range\n",
+                         static_cast<unsigned long long>(stored_tokens),
+                         static_cast<unsigned long long>(corpus_tokens));
+            return false;
+        }
+        if (total_iters_override > 0) {
+            opt.lr_total_iters = total_iters_override;
+            std::printf("[resume] LR schedule horizon overridden to %d iterations\n", opt.lr_total_iters);
+        }
+        std::printf("[resume] step=%d lr=%g lr_total_iters=%d\n", opt.step, opt.lr, opt.lr_total_iters);
+    }
+    std::printf("[model] parameters = %d (~%.2fM)\n", W.count_params(),
+                W.count_params() / 1e6f);
+
     int T = cfg.block_size;
 
     if (static_cast<int>(data.size()) < T + 2) {
@@ -1198,13 +1588,15 @@ static bool train(
         }
         if (grad_nan) return false;
         opt.update_all(W);
-        if ((iter + 1) % eval_every == 0) {
-            std::printf("[iter %5d] loss = %.4f\n", iter + 1, loss);
+        if (opt.step % eval_every == 0) {
+            std::printf("[iter %5d] loss = %.4f\n", opt.step, loss);
         }
     }
 
     if (!save_weights(W, model_path)) return false;
-    std::printf("[done] model saved to %s\n", model_path.c_str());
+    const std::string state_path = model_path + ".state";
+    if (!save_training_state(W, opt, data_rng, corpus_tokens, state_path)) return false;
+    std::printf("[done] model saved to %s (training state: %s)\n", model_path.c_str(), state_path.c_str());
     return true;
 }
 
@@ -1215,9 +1607,14 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::printf(
             "Usage:\n"
-            "  %s train <data.txt> [model.bin] [iters] [lr] [n_embd] [n_head] [n_layer] [block_size]\n"
-            "  %s gen   <model.bin> <vocab.bin> \"<seed>\"\n",
-            argv[0], argv[0]);
+            "  %s train  <data.txt> [model.bin] [iters] [lr] [n_embd] [n_head] [n_layer] [block_size] [total_iters]\n"
+            "  %s resume <data.txt> <model.bin> [extra_iters] [total_iters]\n"
+            "  %s gen    <model.bin> <vocab.bin> \"<seed>\" [temperature] [max_new]\n"
+            "  train  writes <model.bin> plus full optimizer/sampler state in <model.bin>.state;\n"
+            "  resume continues training from that state. Persisted optimizer hyperparameters\n"
+            "  (lr, schedule horizon, beta1/beta2, eps, step) are authoritative on resume;\n"
+            "  total_iters may extend the schedule horizon.\n",
+            argv[0], argv[0], argv[0]);
         return 1;
     }
 
@@ -1233,7 +1630,19 @@ int main(int argc, char* argv[]) {
         int   n_head  = (argc > 7) ? std::stoi(argv[7]) : 8;
         int   n_layer = (argc > 8) ? std::stoi(argv[8]) : 6;
         int   block_size = (argc > 9) ? std::stoi(argv[9]) : 128;
-        if (!train(data_path, model_path, iters, 100, lr, n_embd, n_head, n_layer, block_size)) return 1;
+        int   total_iters = (argc > 10) ? std::stoi(argv[10]) : 0;
+        if (!train(data_path, model_path, iters, 100, lr, n_embd, n_head, n_layer, block_size, false, total_iters)) return 1;
+
+    } else if (mode == "resume") {
+        if (argc < 4) { std::fprintf(stderr, "resume: need <data.txt> <model.bin> [extra_iters] [total_iters]\n"); return 1; }
+        std::string data_path  = argv[2];
+        std::string model_path = argv[3];
+        int extra_iters = (argc > 4) ? std::stoi(argv[4]) : 1000;
+        int total_iters = (argc > 5) ? std::stoi(argv[5]) : 0;
+        // Persisted optimizer hyperparameters (lr, schedule horizon, beta1/beta2,
+        // eps, step) and the checkpoint configuration are authoritative on
+        // resume; the train-mode CLI lr/dimension arguments do not apply here.
+        if (!train(data_path, model_path, extra_iters, 100, 0.0f, 128, 8, 6, 128, true, total_iters)) return 1;
 
     } else if (mode == "gen") {
         if (argc < 5) { std::fprintf(stderr, "gen: need <model.bin> <vocab.bin> \"<seed>\"\n"); return 1; }

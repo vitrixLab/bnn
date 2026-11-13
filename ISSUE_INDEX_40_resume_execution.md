@@ -54,6 +54,20 @@
    - [ ] Clarify GPT-1 likeness: resume/checkpoint is tooling/infrastructure, not direct likeness axis
    - [ ] Define deterministic replay: fresh uninterrupted seeded run, not weights-only restart
    - [ ] Link existing loss trace and logging definition; do not invent unit or discard local results
+
+- [ ] **Apply OpenCode directive findings (Issue #40 comment 6828568649):**
+   - [ ] Inventory all tracked Markdown files and identify canonical governance docs (Issues #25, #20)
+   - [ ] Establish implementation truth by inspecting actual code with file/line references
+   - [ ] Resolve parameter count from allocated trainable tensors, not simplified formulas
+   - [ ] Reconcile context length 128 vs 64 across defaults, CLI, training, checkpoint, generation
+   - [ ] Preserve `params × 60` only as unvalidated heuristic; correct arithmetic (810K×60=48.6 MB, 117M×60=7.02 GB)
+   - [ ] Separate GPT-1 likeness axes: architecture, tokenizer/data, training-recipe, evaluation, engineering/tooling
+   - [ ] Define deterministic replay as fresh uninterrupted run; weights-only load is warm-start, not exact continuation
+   - [ ] Locate and preserve existing loss traces with provenance, logging definition, and artifact hash
+   - [ ] Add programmatic count assertion/test tied to known config
+   - [ ] Add tests for max sequence length, overlength inputs, generation truncation, checkpoint/config round-trip
+   - [ ] Add interrupted-vs-uninterrupted equivalence test with numerical tolerance
+   - [ ] Add loss metric semantics test (per byte, per token, per sequence)
 - [ ] Implement codex API integration for state restoration
 - [ ] Integrate with binary skill `#44` `resume-codex`
 - [ ] Connect with checkpoint versioning system

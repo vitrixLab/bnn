@@ -49,9 +49,11 @@ With GPT-1's 50K BPE vocab: ~150M params closer to published 117M
   5000 0.0002 768 12 12 256
 ```
 
-**Required Data:** 7MB+ (per `data_bytes ≈ params × 60` → 117M × 60 ≈ 7MB)  
-**Expected Training Time:** 30-60 minutes on CPU (vs. seconds for 800K models)  
-**Expected Loss:** ~4.5-5.0 after 5000 iterations (with LR scheduling)
+**Required Data:** 7.02 GB+ decimal (per `data_bytes ≈ params × 60` → 117M × 60 ≈ 7.02 GB decimal). ⚠️ This is an unvalidated heuristic per Issue #40 comment 6828090894; do not describe as minimum-data law or invariant. Correct arithmetic: 810,000 × 60 = 48.6 MB decimal, not ~5 MB.
+
+**Expected Training Time:** 30-60 minutes on CPU (vs. seconds for 800K models). ⚠️ Unsupported estimate; actual time depends on hardware, workload, and optimization level.
+
+**Expected Loss:** ~4.5-5.0 after 5000 iterations (with LR scheduling). ⚠️ Unvalidated; depends on dataset, architecture, and optimization hyperparameters.
 
 ---
 ## 🗂️ Section 2: Production Datasets Availability
@@ -99,8 +101,8 @@ required_data_bytes = target_params × 60
 
 # Examples:
 14K params → 840KB (original, works with 2KB)
-810K params → 48MB (Hyperion v1.0, needs 48KB minimum)
-117M params → 7.02MB (GPT-1 smallest, needs 7MB+)
+810K params → 48.6 MB decimal (Hyperion v1.0, needs 48.6 MB minimum)
+117M params → 7.02 GB decimal (GPT-1 smallest, needs 7.02 GB+)
 425M params → 25.5GB (GPT-1 large, needs 25GB+)
 ```
 
@@ -112,7 +114,7 @@ required_data_bytes = target_params × 60
 **Hardware Requirements for 117M Model:**
 - **CPU:** Modern multi-core (8+ cores recommended)
 - **RAM:** 4GB minimum (8GB recommended for 117M model)
-- **Storage:** 7MB+ for training data + 500MB for checkpoints
+- **Storage:** 7.02 GB+ for training data + 500MB for checkpoints (for 117M parameter model)
 - **Time:** 30-60 minutes for 5000 iterations
 
 **Software Requirements:**
@@ -193,16 +195,16 @@ model.save_pretrained("./gpt1_117m_final")
 - [x] ✅ Complete checkpoint versioning (DONE)
 - [x] ✅ Update Hyperion v1.0 documentation (DONE)
 - [x] ✅ Test medium-scale models (128×4×4×32 ~800K) (DONE)
-- [ ] Train intermediate model: 128×6×8×64 (~1.2M params) - **NEEDS 7MB+ DATA**
+- [ ] Train intermediate model: 128×6×8×64 (~1.2M params) - **NEEDS 72MB+ DATA**
 
 ### Phase 2: Scaling (Weeks 3-4)
-- [ ] Train 128×8×4×64 (~2M params) - **NEEDS 2MB+ DATA**
-- [ ] Train 256×8×8×128 (~8M params) - **NEEDDS 500KB+ DATA**  
-- [ ] Train 512×12×12×256 (~52M params) - **NEEDS 3GB+ DATA**
+- [ ] Train 128×8×4×64 (~2M params) - **NEEDS 120MB+ DATA**
+- [ ] Train 256×8×8×128 (~8M params) - **NEEDS 480MB+ DATA**
+- [ ] Train 512×12×12×256 (~52M params) - **NEEDS 3.12GB+ DATA**
 - [ ] Benchmark against Hyperion v1.0 at each scale
 
 ### Phase 3: GPT-1 Equivalent (Weeks 5-6)
-- [ ] Prepare 7MB+ training dataset
+- [ ] Prepare 7.02 GB+ training dataset
 - [ ] Train 768×12×12×256 (~117M params)
 - [ ] Validate with GPT-1 benchmark metrics
 - [ ] Compare quality on text generation tasks
@@ -221,7 +223,7 @@ model.save_pretrained("./gpt1_117m_final")
 
 | Resource | Amount | Notes |
 |----------|--------|-------|
-| **Training Data** | 7MB+ | Plain text, any content |
+| **Training Data** | 7.02 GB+ | Plain text, any content (for 117M parameter model) |
 | **Disk Space** | 1GB | Checkpoints + data + code |
 | **Memory (RAM)** | 4GB minimum | 8GB recommended |
 | **CPU Cores** | 8+ | More cores = faster training |
@@ -273,8 +275,8 @@ model.save_pretrained("./gpt1_117m_final")
 | Goal | Dataset Size | nanoLM Feasibility | Production Feasibility |
 |------|-------------|-------------------|-----------------------|
 | **Educational** | 50KB-1MB | ✅ Excellent | ❌ Too small |
-| **Intermediate** | 1MB-7MB | ✅ Good (up to ~1.2M params) | ❌ Too small |
-| **GPT-1 Equivalent** | 7MB+ | ⚠️ Feasible (slow) | ✅ Standard starting point |
+| **Intermediate** | 1MB-72MB | ✅ Good (up to ~1.2M params) | ❌ Too small |
+| **GPT-1 Equivalent** | 7.02 GB+ | ⚠️ Feasible (slow) | ✅ Standard starting point |
 | **Production LLM** | 100MB+ | ❌ Impractical | ✅ Standard |
 | **Large-scale** | 1GB+ | ❌ Impractical | ✅ Required |
 
@@ -290,11 +292,11 @@ model.save_pretrained("./gpt1_117m_final")
 - [x] Created comprehensive planning document
 
 ### Recommended Next Steps
-- [ ] Train intermediate model: 128×6×8×64 (~1.2M params) on 7MB+ data
+- [ ] Train intermediate model: 128×6×8×64 (~1.2M params) on 72MB+ data
 - [ ] Compare generation quality across scaling curve (28K → 800K → 1.2M → 117M)
 - [ ] Evaluate PyTorch training pipeline for GPT-1 equivalent
 - [ ] Document final recommendations: nanoLM vs. production frameworks
-- [ ] Create data preparation scripts for 7MB+ GPT-1 dataset
+- [ ] Create data preparation scripts for 7.02 GB+ GPT-1 dataset
 - [ ] Update issue #40 with new scaling information
 - [ ] Implement resume execution by codex (Issue #40) - leverage binary skill #44 `resume-codex` and integrate with checkpoint versioning and sandbox execution gate v3
 - [ ] **Apply Claude cross-review findings (Issue #40 comment 6828090894):**
@@ -348,7 +350,7 @@ disk_size ≈ params × 4 bytes + 8 bytes (header)
 ## 🎯 Bottom Line
 
 **Can nanoLM train a 117M parameter model?**  
-**Technically YES** — The framework supports it, LR scheduling works, checkpoints version, and it will train on 7MB+ data. But practically: **30-60 minutes on CPU for limited educational value.**
+**Technically YES** — The framework supports it, LR scheduling works, checkpoints version, and it will train on 7.02 GB+ data. But practically: **30-60 minutes on CPU for limited educational value.**
 
 **Should you train GPT-1 with nanoLM?**  
 **Only if:** You want to understand Transformer training at scale, need zero-dependency deployment, or are using it as an educational tool.
