@@ -264,6 +264,13 @@ static void test_training_state_rejects_invalid_and_preserves_live_state() {
     write_file_bytes(bad_config_path, bad_config);
     expect_reject(bad_config_path, "configuration mismatch must be rejected");
 
+    std::vector<char> insane_config = valid;
+    insane_config[16] = 1;  // n_embd = 1
+    insane_config[20] = 8;  // n_head = 8: n_head > n_embd, internally invalid
+    const auto insane_config_path = (dir / "insane-config.bin").string();
+    write_file_bytes(insane_config_path, insane_config);
+    expect_reject(insane_config_path, "internally invalid configuration must be rejected");
+
     std::vector<char> trailing = valid; trailing.push_back('\x00');
     const auto trailing_path = (dir / "trailing.bin").string();
     write_file_bytes(trailing_path, trailing);
